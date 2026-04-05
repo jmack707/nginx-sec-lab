@@ -1,0 +1,59 @@
+controller:
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet
+  kind: deployment
+  replicaCount: 1
+
+  # Enable App Protect WAF
+  appprotect:
+    enable: false
+  appprotectdos:
+    enable: false
+
+  # Enable custom resource definitions (VirtualServer, Policy, etc.)
+  enableCustomResources: true
+  enablePreviewPolicies: true
+
+  # Expose metrics for Prometheus scraping
+  prometheus:
+    create: true
+    port: 9113
+
+  # Service type — kind maps this to host ports 8080/8443
+  service:
+    type: NodePort
+    httpPort:
+      nodePort: 30080
+    httpsPort:
+      nodePort: 30443
+    externalTrafficPolicy: Local
+
+  # Node selector — schedule on control-plane which has the port mapping
+  nodeSelector:
+    ingress-ready: "true"
+
+  tolerations:
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Equal"
+      effect: "NoSchedule"
+
+  # Default TLS secret (self-signed fallback)
+  defaultTLS:
+    secret: nginx-ingress/default-server-secret
+
+  # Global NGINX settings
+  config:
+    name: nginx-config
+    entries:
+      proxy-connect-timeout: "30s"
+      proxy-read-timeout: "60s"
+      client-max-body-size: "10m"
+      server-tokens: "off"
+      ssl-protocols: "TLSv1.2 TLSv1.3"
+      ssl-ciphers: "HIGH:!aNULL:!MD5"
+      log-format: |
+        $remote_addr - $remote_user [$time_local]
+        "$request" $status $body_bytes_sent
+        "$http_referer" "$http_user_agent"
+        rt=$request_time uct=$upstream_connect_time
+        uht=$upstream_header_time urt=$upstream_response_time

@@ -1,0 +1,47 @@
+grafana:
+  adminPassword: "admin"
+  persistence:
+    enabled: false
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: "NGINX Lab"
+          type: file
+          disableDeletion: false
+          options:
+            path: /var/lib/grafana/dashboards/default
+  dashboardsConfigMaps:
+    default: nginx-lab-dashboard
+
+prometheus:
+  prometheusSpec:
+    retention: 24h
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+    # Scrape all ServiceMonitors in all namespaces
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+
+alertmanager:
+  enabled: false
+
+# Reduce resource footprint for lab use
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true
+
+# Scrape NGINX Ingress metrics
+additionalScrapeConfigs:
+  - job_name: nginx-ingress
+    static_configs:
+      - targets:
+          - nginx-ingress.nginx-ingress.svc.cluster.local:9113

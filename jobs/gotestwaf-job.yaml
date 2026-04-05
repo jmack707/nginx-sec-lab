@@ -1,0 +1,95 @@
+---
+# GoTestWAF — automated WAF bypass and coverage testing
+# Runs inside the cluster against NGINX Ingress via ClusterIP.
+#
+# DO NOT apply this file directly — use:
+#   task scan                   (resolves INGRESS_IP_PLACEHOLDER at runtime)
+#
+# The INGRESS_IP_PLACEHOLDER in hostAliases is substituted by
+# scripts/resolve-ingress-ip.sh before kubectl apply.
+#
+# Docs: https://github.com/wallarm/gotestwaf
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: scanner-sa
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: scanner-role
+rules:
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: scanner-rolebinding
+subjects:
+  - kind: ServiceAccount
+    name: scanner-sa
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: scanner-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gotestwaf-scan
+  namespace: default
+  labels:
+    app: gotestwaf
+    lab: nginx-sec-lab
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: gotestwaf
+    spec:
+      restartPolicy: Never
+      serviceAccountName: scanner-sa
+
+      # INGRESS_IP_PLACEHOLDER is replaced by scripts/resolve-ingress-ip.sh
+      # at task scan time with the actual nginx-ingress ClusterIP.
+      hostAliases:
+        - ip: "INGRESS_IP_PLACEHOLDER"
+          hostnames:
+            - crapi.lab.local
+            - juiceshop.lab.local
+            - dvga.lab.local
+            - vapi.lab.local
+
+      containers:
+        - name: gotestwaf
+          image: wallarm/gotestwaf:latest
+          args:
+            - "--url=https://crapi.lab.local"
+            - "--tlsVerify=false"
+            - "--noEmailReport"
+            - "--reportFormat=txt"
+            - "--reportPath=/results"
+            - "--workers=5"
+            - "--sendDelay=100ms"
+            - "--logLevel=info"
+          volumeMounts:
+            - name: results
+              mountPath: /results
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: scan-results-pvc

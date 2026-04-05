@@ -1,0 +1,28 @@
+# values/cis-cluster.yaml
+# BIG-IP CIS — ClusterIP (cluster) mode
+# Requires: CNI=cilium or CNI=flannel + VTEP/VXLAN configured on BIG-IP
+# BIG-IP pool members = pod IPs directly (bypasses kube-proxy)
+#
+# Configure before use: task bigip:configure
+# Then: task bigip:tunnel:setup → task cni:install CNI=cilium MODE=bigip
+# Then: task bigip:cis:install CIS_MODE=cluster
+
+bigip_login_secret: f5-bigip-ctlr-login
+rbac:
+  create: true
+serviceAccount:
+  create: true
+
+args:
+  bigip_url: https://BIGIP_MGMT_IP_PLACEHOLDER
+  bigip_partition: BIGIP_PARTITION_PLACEHOLDER
+  log_level: INFO
+  pool_member_type: cluster
+  # Must match the VXLAN tunnel name created via task bigip:tunnel:setup
+  flannel-name: /Common/flannel_vxlan
+  insecure: true
+  as3_validation: true
+  custom_resource_mode: true
+  log-as3-response: true
+  manage-ingress: false
+  manage-routes: false

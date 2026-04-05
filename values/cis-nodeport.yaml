@@ -1,0 +1,25 @@
+# values/cis-nodeport.yaml
+# BIG-IP CIS — NodePort mode
+# Works with any CNI (kindnet, Cilium, Flannel)
+# BIG-IP pool members = node IPs + NodePort
+#
+# Configure before use: task bigip:configure
+# This patches BIGIP_MGMT_IP_PLACEHOLDER and creates the credential secret.
+
+bigip_login_secret: f5-bigip-ctlr-login
+rbac:
+  create: true
+serviceAccount:
+  create: true
+
+args:
+  bigip_url: https://BIGIP_MGMT_IP_PLACEHOLDER
+  bigip_partition: BIGIP_PARTITION_PLACEHOLDER
+  log_level: INFO
+  pool_member_type: nodeport
+  insecure: true
+  as3_validation: true
+  custom_resource_mode: true
+  log-as3-response: true
+  manage-ingress: false
+  manage-routes: false

@@ -1,0 +1,221 @@
+---
+# Grafana dashboard ConfigMap
+# Automatically imported by kube-prometheus-stack via dashboardsConfigMaps in values/prometheus.yaml
+# Shows: NGINX request rate, WAF block rate, upstream response time, error rate per app
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-lab-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  nginx-lab.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "lineWidth": 2, "fillOpacity": 10 },
+              "unit": "reqps"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "tooltip": { "mode": "multi" } },
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_http_requests_total[2m])) by (ingress)",
+              "legendFormat": "{{ ingress }}",
+              "refId": "A"
+            }
+          ],
+          "title": "Request Rate by App (req/s)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "fixedColor": "#F2495C", "mode": "fixed" },
+              "custom": { "lineWidth": 2, "fillOpacity": 20 },
+              "unit": "short"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "id": 2,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"4..|5..\"}[2m])) by (ingress, status)",
+              "legendFormat": "{{ ingress }} HTTP {{ status }}",
+              "refId": "A"
+            }
+          ],
+          "title": "Error Rate by App (4xx/5xx)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "fixedColor": "#FF9830", "mode": "fixed" },
+              "custom": { "lineWidth": 2, "fillOpacity": 15 },
+              "unit": "reqps"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "id": 3,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_http_requests_total{status=\"400\"}[2m]))",
+              "legendFormat": "WAF Blocks (HTTP 400)",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_http_requests_total{status=\"403\"}[2m]))",
+              "legendFormat": "WAF Blocks (HTTP 403)",
+              "refId": "B"
+            }
+          ],
+          "title": "WAF Block Rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "lineWidth": 2 },
+              "unit": "s"
+            }
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "id": 4,
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(nginx_ingress_nginx_upstream_response_time_seconds_bucket[2m])) by (le, ingress))",
+              "legendFormat": "{{ ingress }} p95",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(nginx_ingress_nginx_upstream_response_time_seconds_bucket[2m])) by (le, ingress))",
+              "legendFormat": "{{ ingress }} p50",
+              "refId": "B"
+            }
+          ],
+          "title": "Upstream Response Time (p50/p95)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "short", "color": { "mode": "thresholds" },
+              "thresholds": { "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 100 },
+                { "color": "red", "value": 500 }
+              ]}
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
+          "id": 5,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+          "targets": [
+            {
+              "expr": "sum(increase(nginx_ingress_nginx_http_requests_total{status=~\"4..|5..\"}[10m]))",
+              "legendFormat": "Errors (10m)",
+              "refId": "A"
+            }
+          ],
+          "title": "Errors Last 10m",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "reqps", "color": { "mode": "thresholds" },
+              "thresholds": { "steps": [
+                { "color": "blue", "value": null }
+              ]}
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 16 },
+          "id": 6,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_http_requests_total[2m]))",
+              "legendFormat": "Total req/s",
+              "refId": "A"
+            }
+          ],
+          "title": "Current Request Rate",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "short", "color": { "mode": "thresholds" },
+              "thresholds": { "steps": [
+                { "color": "green", "value": null },
+                { "color": "orange", "value": 1 }
+              ]}
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 16 },
+          "id": 7,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+          "targets": [
+            {
+              "expr": "sum(increase(nginx_ingress_nginx_http_requests_total{status=\"403\"}[10m]))",
+              "legendFormat": "WAF Blocks (10m)",
+              "refId": "A"
+            }
+          ],
+          "title": "WAF Blocks Last 10m",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": {
+            "defaults": { "unit": "s", "color": { "mode": "thresholds" },
+              "thresholds": { "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.5 },
+                { "color": "red", "value": 2 }
+              ]}
+            }
+          },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 16 },
+          "id": 8,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(nginx_ingress_nginx_upstream_response_time_seconds_bucket[2m])) by (le))",
+              "legendFormat": "p95 latency",
+              "refId": "A"
+            }
+          ],
+          "title": "p95 Latency",
+          "type": "stat"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 38,
+      "tags": ["nginx", "lab", "security"],
+      "templating": { "list": [] },
+      "time": { "from": "now-30m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "NGINX Security Lab",
+      "uid": "nginx-sec-lab",
+      "version": 1
+    }

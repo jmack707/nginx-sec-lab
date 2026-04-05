@@ -1,0 +1,79 @@
+---
+apiVersion: appprotect.f5.com/v1beta1
+kind: APPolicy
+metadata:
+  name: owasp-crs
+  namespace: nginx-ingress
+spec:
+  policy:
+    name: owasp-crs
+    description: "OWASP CRS baseline policy for lab security testing"
+    template:
+      name: POLICY_TEMPLATE_NGINX_BASE
+
+    applicationLanguage: utf-8
+    enforcementMode: blocking
+
+    # ── Signature sets ─────────────────────────────────────────────────
+    signature-sets:
+      - name: All Signatures
+        block: true
+        alarm: true
+
+    # ── Blocking settings ──────────────────────────────────────────────
+    blocking-settings:
+      violations:
+        - name: VIOL_ATTACK_SIGNATURE
+          alarm: true
+          block: true
+        - name: VIOL_MANDATORY_HEADER
+          alarm: true
+          block: false
+        - name: VIOL_HTTP_PROTOCOL
+          alarm: true
+          block: true
+        - name: VIOL_EVASION
+          alarm: true
+          block: true
+        - name: VIOL_REQUEST_MAX_LENGTH
+          alarm: true
+          block: true
+        - name: VIOL_COOKIE_MODIFIED
+          alarm: true
+          block: false
+
+    # ── HTTP protocol compliance ───────────────────────────────────────
+    general:
+      allowedResponseCodes:
+        - 400
+        - 401
+        - 403
+        - 404
+        - 405
+        - 408
+        - 500
+        - 501
+        - 502
+        - 503
+
+    # ── Response scrubbing ─────────────────────────────────────────────
+    # Prevent stack traces and internal paths leaking in responses
+    responsePageReference:
+      defaultPage:
+        responseCode: 403
+        responseHeader: "Content-Type: application/json"
+        responseBody: '{"status":"blocked","message":"Request blocked by security policy"}'
+
+    # ── Rate limiting (via NGINX Policy CRD — see overlays) ───────────
+    # NOTE: Rate limiting is applied as a separate Policy CRD per-app
+
+    # ── Bot detection ─────────────────────────────────────────────────
+    bot-defense:
+      settings:
+        isEnabled: true
+      mitigations:
+        classes:
+          - name: "Untrusted Bot"
+            action: block
+          - name: "Malicious Bot"
+            action: block

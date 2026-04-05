@@ -1,0 +1,32 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crapi
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    lab: nginx-sec-lab
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: juice-shop
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    lab: nginx-sec-lab
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dvga
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    lab: nginx-sec-lab
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vapi
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    lab: nginx-sec-lab

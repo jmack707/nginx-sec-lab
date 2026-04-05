@@ -1,0 +1,28 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dvga
+  namespace: dvga
+  annotations:
+    nginx.org/proxy-connect-timeout: "30s"
+    nginx.org/proxy-read-timeout: "60s"
+    # GraphQL queries can be large — allow generous body size
+    nginx.org/client-max-body-size: "2m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - dvga.lab.local
+      secretName: dvga-tls
+  rules:
+    - host: dvga.lab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dvga
+                port:
+                  number: 5013

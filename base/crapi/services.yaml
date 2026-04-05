@@ -1,0 +1,111 @@
+---
+# ── Secrets ─────────────────────────────────────────────────────────────────
+# NOTE: In a real environment use Sealed Secrets or external-secrets-operator.
+# These are lab-only plaintext values.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: crapi-db-secret
+  namespace: crapi
+type: Opaque
+stringData:
+  password: "crapipassword"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: crapi-jwt-secret
+  namespace: crapi
+type: Opaque
+stringData:
+  # Intentionally weak secret — part of the JWT forgery challenge
+  secret: "crapi-secret-key-change-me"
+---
+# ── Services ─────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: crapi-identity
+  namespace: crapi
+spec:
+  selector:
+    app: crapi-identity
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crapi-community
+  namespace: crapi
+spec:
+  selector:
+    app: crapi-community
+  ports:
+    - port: 8087
+      targetPort: 8087
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crapi-workshop
+  namespace: crapi
+spec:
+  selector:
+    app: crapi-workshop
+  ports:
+    - port: 8085
+      targetPort: 8085
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crapi-web
+  namespace: crapi
+spec:
+  selector:
+    app: crapi-web
+  ports:
+    - port: 8888
+      targetPort: 8888
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailhog
+  namespace: crapi
+spec:
+  selector:
+    app: mailhog
+  ports:
+    - name: smtp
+      port: 1025
+      targetPort: 1025
+    - name: http
+      port: 8025
+      targetPort: 8025
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crapi-mongodb
+  namespace: crapi
+spec:
+  selector:
+    app: crapi-mongodb
+  ports:
+    - port: 27017
+      targetPort: 27017
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crapi-postgres
+  namespace: crapi
+spec:
+  selector:
+    app: crapi-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

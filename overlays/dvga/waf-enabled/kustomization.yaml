@@ -1,0 +1,29 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# WAF ENABLED — NGINX App Protect OWASP CRS policy active
+# Patches the Ingress with App Protect annotations
+# Use: task waf-on
+namespace: dvga
+resources:
+  - ../../../base/dvga
+patches:
+  - patch: |-
+      - op: add
+        path: /metadata/annotations/nginx.org~1app-protect-enable
+        value: "True"
+      - op: add
+        path: /metadata/annotations/nginx.org~1app-protect-policy-name
+        value: /nginx-ingress/owasp-crs
+      - op: add
+        path: /metadata/annotations/nginx.org~1app-protect-security-log-enable
+        value: "True"
+      - op: add
+        path: /metadata/annotations/nginx.org~1app-protect-security-log
+        value: /nginx-ingress/logconf-stdout
+      - op: add
+        path: /metadata/annotations/nginx.org~1app-protect-security-log-destination
+        value: stderr
+    target:
+      kind: Ingress
+      name: dvga

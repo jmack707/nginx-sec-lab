@@ -1,0 +1,47 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crapi-web
+  namespace: crapi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crapi-web
+  template:
+    metadata:
+      labels:
+        app: crapi-web
+    spec:
+      containers:
+        - name: crapi-web
+          image: crapi/crapi-web:latest
+          ports:
+            - containerPort: 8888
+          env:
+            - name: COMMUNITY_SERVICE
+              value: "crapi-community:8087"
+            - name: IDENTITY_SERVICE
+              value: "crapi-identity:8080"
+            - name: WORKSHOP_SERVICE
+              value: "crapi-workshop:8888"
+            - name: REACT_APP_IDENTITY_SERVICE
+              value: "https://crapi.lab.local/identity"
+            - name: REACT_APP_COMMUNITY_SERVICE
+              value: "https://crapi.lab.local/community"
+            - name: REACT_APP_WORKSHOP_SERVICE
+              value: "https://crapi.lab.local/workshop"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8888
+            initialDelaySeconds: 10
+            periodSeconds: 10

@@ -1,0 +1,297 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+vars:
+  CLUSTER_NAME: nginx-sec-lab
+
+tasks:
+
+  # ---------------------------------------------------------------------------
+  # TOP LEVEL
+  # ---------------------------------------------------------------------------
+
+  install:
+    desc: "Install all prerequisites on Ubuntu 22.04/24.04 (requires sudo)"
+    cmds:
+      - sudo bash scripts/install-ubuntu.sh
+
+  check:
+    desc: "Verify all prerequisite tools are installed"
+    cmds:
+      - bash scripts/check-prereqs.sh
+
+  up:
+    desc: "Full lab up. Override CNI with: CNI=cilium task up"
+    cmds:
+      - task: ca:init
+      - task: check
+      - task: cluster
+      - task: cni:install
+      - task: ca:import
+      - task: pre-deploy
+      - task: deploy
+      - task: issuer
+      - task: apps:up
+      - task: health
+
+  down:
+    desc: "Destroy the kind cluster"
+    cmds:
+      - kind delete cluster --name nginx-sec-lab
+      - echo "Cluster destroyed"
+
+  reset:
+    desc: "Full teardown and rebuild"
+    cmds:
+      - task: down
+      - task: up
+
+  # ---------------------------------------------------------------------------
+  # CLUSTER
+  # ---------------------------------------------------------------------------
+
+  cluster:
+    desc: "Create kind cluster. Override CNI with: CNI=cilium task cluster"
+    cmds:
+      - bash scripts/create-cluster.sh
+
+  # ---------------------------------------------------------------------------
+  # CNI
+  # ---------------------------------------------------------------------------
+
+  cni:install:
+    desc: "Install CNI. Default: kindnet. Override with: CNI=cilium task cni:install"
+    cmds:
+      - bash scripts/install-cni.sh
+
+  cni:status:
+    desc: "Show CNI status and node assignments"
+    cmds:
+      - bash scripts/cni-status.sh
+
+  cni:hubble:
+    desc: "Port-forward Hubble UI to localhost:12000 (Cilium only)"
+    cmds:
+      - echo "Hubble UI at http://localhost:12000 -- Ctrl+C to stop"
+      - kubectl port-forward svc/hubble-ui 12000:80 -n kube-system
+
+  cni:upgrade:
+    desc: "Upgrade Cilium in-place. Use MODE=bigip for BIG-IP VTEP mode"
+    cmds:
+      - bash scripts/upgrade-cilium.sh
+
+  # ---------------------------------------------------------------------------
+  # BIG-IP
+  # ---------------------------------------------------------------------------
+
+  bigip:configure:
+    desc: "Interactive: configure BIG-IP connection -- run before bigip:cis:install"
+    cmds:
+      - bash scripts/bigip-configure.sh
+
+  bigip:tunnel:setup:
+    desc: "Print BIG-IP TMSH commands for Cilium VTEP tunnel setup"
+    cmds:
+      - bash scripts/bigip-cilium-tunnel.sh
+
+  bigip:cis:install:
+    desc: "Install BIG-IP CIS via Helm. Override with: CIS_MODE=cluster task bigip:cis:install"
+    cmds:
+      - bash scripts/install-cis.sh
+
+  bigip:cis:status:
+    desc: "Show CIS pod status and recent logs"
+    cmds:
+      - kubectl get pods -n kube-system -l app=k8s-bigip-ctlr
+      - kubectl logs -n kube-system -l app=k8s-bigip-ctlr --tail=30
+
+  # ---------------------------------------------------------------------------
+  # CA & TLS
+  # ---------------------------------------------------------------------------
+  ca:init:
+    desc: "One-time: create local CA cert and key in repo root (skips if already exists)"
+    cmds:
+      - |
+        if [ -f "root_ca.crt" ] && [ -f "root_ca.key" ]; then
+          echo "Local CA already exists -- skipping"
+          exit 0
+        fi
+        echo "Creating local CA with openssl..."
+        openssl genrsa -out root_ca.key 4096
+        openssl req -new -x509 -days 3650 \
+          -key root_ca.key \
+          -out root_ca.crt \
+          -subj "/CN=nginx-sec-lab Root CA/O=nginx-sec-lab/C=US"
+        echo "Local CA created:"
+        echo "  $(pwd)/root_ca.crt"
+        echo "  $(pwd)/root_ca.key"
+        openssl x509 -noout -subject -dates -in root_ca.crt
+
+  ca:import:
+    desc: "Import local CA into cluster as a Kubernetes secret"
+    cmds:
+      - kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+      - |
+        kubectl create secret tls local-ca \
+          --cert root_ca.crt \
+          --key root_ca.key \
+          --namespace cert-manager \
+          --dry-run=client -o yaml | kubectl apply -f -
+      - echo "CA imported"
+
+  # ---------------------------------------------------------------------------
+  # INFRASTRUCTURE
+  # ---------------------------------------------------------------------------
+
+  pre-deploy:
+    desc: "Create resources needed before helmfile sync"
+    cmds:
+      - bash scripts/pre-deploy.sh
+
+  deploy:
+    desc: "Deploy all Helm releases via helmfile"
+    cmds:
+      - helmfile sync
+      - kubectl rollout status deployment/cert-manager -n cert-manager --timeout=180s
+      - kubectl rollout status deployment/nginx-ingress-controller -n nginx-ingress --timeout=180s
+      - echo "Infrastructure deployed"
+
+  issuer:
+    desc: "Apply ClusterIssuer, App Protect policies, and Grafana dashboard"
+    cmds:
+      - kubectl apply -f manifests/namespaces.yaml
+      - kubectl apply -f manifests/cluster-issuer.yaml
+      - cmd: kubectl apply -f policies/ap-logconf.yaml
+        ignore_error: true
+      - cmd: kubectl apply -f policies/ap-policy-owasp.yaml
+        ignore_error: true
+      - cmd: kubectl apply -f policies/ap-policy-dataguard.yaml
+        ignore_error: true
+      - kubectl apply -f grafana/nginx-dashboard.yaml
+      - echo "Issuer, WAF policies, and Grafana dashboard applied"
+
+  # ---------------------------------------------------------------------------
+  # DEMO APPLICATIONS
+  # ---------------------------------------------------------------------------
+
+  apps:up:
+    desc: "Deploy all demo applications (WAF disabled by default)"
+    cmds:
+      - task: waf-off
+
+  apps:down:
+    desc: "Remove all demo application namespaces"
+    cmds:
+      - kubectl delete namespace crapi juice-shop dvga vapi --ignore-not-found=true
+      - echo "All demo apps removed"
+
+  # ---------------------------------------------------------------------------
+  # WAF
+  # ---------------------------------------------------------------------------
+
+  waf-on:
+    desc: "Enable NGINX App Protect WAF on all apps"
+    cmds:
+      - kubectl apply -k overlays/crapi/waf-enabled
+      - kubectl apply -k overlays/juiceshop/waf-enabled
+      - kubectl apply -k overlays/dvga/waf-enabled
+      - kubectl apply -k overlays/vapi/waf-enabled
+      - echo "WAF enabled"
+
+  waf-off:
+    desc: "Disable WAF on all apps (baseline mode)"
+    cmds:
+      - kubectl apply -k overlays/crapi/waf-disabled
+      - kubectl apply -k overlays/juiceshop/waf-disabled
+      - kubectl apply -k overlays/dvga/waf-disabled
+      - kubectl apply -k overlays/vapi/waf-disabled
+      - echo "WAF disabled"
+
+  # ---------------------------------------------------------------------------
+  # SCANNING
+  # ---------------------------------------------------------------------------
+
+  scan:
+    desc: "Run GoTestWAF against crAPI"
+    cmds:
+      - bash scripts/run-scan.sh gotestwaf
+
+  scan:nuclei:
+    desc: "Run Nuclei template scan across all apps"
+    cmds:
+      - bash scripts/run-scan.sh nuclei
+
+  locust:
+    desc: "Seed crAPI users then run Locust traffic generation"
+    cmds:
+      - bash scripts/run-locust.sh
+
+  locust:logs:
+    desc: "Follow Locust traffic generation logs"
+    cmds:
+      - kubectl logs -f job/locust-traffic
+
+  # ---------------------------------------------------------------------------
+  # OBSERVABILITY
+  # ---------------------------------------------------------------------------
+
+  metrics:
+    desc: "Port-forward Grafana to localhost:3000 (admin/admin)"
+    cmds:
+      - echo "Grafana at http://localhost:3000 -- Ctrl+C to stop"
+      - kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
+
+  prometheus:
+    desc: "Port-forward Prometheus to localhost:9090"
+    cmds:
+      - echo "Prometheus at http://localhost:9090 -- Ctrl+C to stop"
+      - kubectl port-forward svc/kube-prometheus-stack-prometheus 9090:9090 -n monitoring
+
+  logs:waf:
+    desc: "Tail NGINX App Protect security event log"
+    cmds:
+      - kubectl logs -n nginx-ingress -l app=nginx-ingress -c app-protect-log --follow --tail=50
+
+  logs:nginx:
+    desc: "Tail NGINX Ingress Controller access log"
+    cmds:
+      - kubectl logs -n nginx-ingress -l app=nginx-ingress --follow --tail=100
+
+  # ---------------------------------------------------------------------------
+  # APP UTILITIES
+  # ---------------------------------------------------------------------------
+
+  crapi:seed:
+    desc: "Register test users in crAPI (run before task locust)"
+    cmds:
+      - kubectl delete job crapi-seed -n crapi --ignore-not-found=true
+      - kubectl apply -f jobs/crapi-seed-job.yaml
+      - kubectl wait --for=condition=complete job/crapi-seed -n crapi --timeout=120s
+      - kubectl logs job/crapi-seed -n crapi
+      - echo "crAPI users seeded"
+
+  crapi:mail:
+    desc: "Port-forward MailHog to localhost:8025"
+    cmds:
+      - echo "MailHog at http://localhost:8025 -- Ctrl+C to stop"
+      - kubectl port-forward svc/mailhog 8025:8025 -n crapi
+
+  crapi:shell:
+    desc: "Shell into crapi-identity container"
+    cmds:
+      - kubectl exec -it -n crapi deploy/crapi-identity -- /bin/sh
+
+  juiceshop:shell:
+    desc: "Shell into juice-shop container"
+    cmds:
+      - kubectl exec -it -n juice-shop deploy/juice-shop -- /bin/sh
+
+  # ---------------------------------------------------------------------------
+  # HEALTH
+  # ---------------------------------------------------------------------------
+
+  health:
+    desc: "Run all post-deploy verification checks"
+    cmds:
+      - bash scripts/health-check.sh
+

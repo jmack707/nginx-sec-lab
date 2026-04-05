@@ -1,0 +1,48 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: crapi
+  namespace: crapi
+  annotations:
+    nginx.org/proxy-connect-timeout: "30s"
+    nginx.org/proxy-read-timeout: "60s"
+    nginx.org/client-max-body-size: "10m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - crapi.lab.local
+      secretName: crapi-tls
+  rules:
+    - host: crapi.lab.local
+      http:
+        paths:
+          - path: /identity
+            pathType: Prefix
+            backend:
+              service:
+                name: crapi-identity
+                port:
+                  number: 8080
+          - path: /community
+            pathType: Prefix
+            backend:
+              service:
+                name: crapi-community
+                port:
+                  number: 8087
+          - path: /workshop
+            pathType: Prefix
+            backend:
+              service:
+                name: crapi-workshop
+                port:
+                  number: 8085
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: crapi-web
+                port:
+                  number: 8888

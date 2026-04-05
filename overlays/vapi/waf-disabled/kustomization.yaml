@@ -1,0 +1,9 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# WAF DISABLED — baseline, no App Protect annotations
+# All traffic passes to the app without WAF inspection
+# Use: task waf-off
+namespace: vapi
+resources:
+  - ../../../base/vapi

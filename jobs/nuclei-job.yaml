@@ -1,0 +1,102 @@
+---
+# Nuclei — fast template-based vulnerability scanner
+# Scans all four demo apps with API/web-focused template tags.
+#
+# DO NOT apply this file directly — use:
+#   task scan:nuclei            (resolves INGRESS_IP_PLACEHOLDER at runtime)
+#
+# Docs: https://github.com/projectdiscovery/nuclei
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nuclei-scan
+  namespace: default
+  labels:
+    app: nuclei
+    lab: nginx-sec-lab
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: nuclei
+    spec:
+      restartPolicy: Never
+      serviceAccountName: scanner-sa
+
+      # INGRESS_IP_PLACEHOLDER resolved at task scan:nuclei time
+      hostAliases:
+        - ip: "INGRESS_IP_PLACEHOLDER"
+          hostnames:
+            - crapi.lab.local
+            - juiceshop.lab.local
+            - dvga.lab.local
+            - vapi.lab.local
+
+      initContainers:
+        - name: update-templates
+          image: projectdiscovery/nuclei:latest
+          command:
+            - nuclei
+            - -update-templates
+            - -update-template-dir
+            - /templates
+          volumeMounts:
+            - name: nuclei-templates
+              mountPath: /templates
+
+      containers:
+        - name: nuclei
+          image: projectdiscovery/nuclei:latest
+          command: ["nuclei"]
+          args:
+            - "-target"
+            - "https://crapi.lab.local"
+            - "-target"
+            - "https://juiceshop.lab.local"
+            - "-target"
+            - "https://dvga.lab.local"
+            - "-target"
+            - "https://vapi.lab.local"
+            - "-tags"
+            - "oast,exposure,misconfig,default-login,token,graphql,api"
+            - "-exclude-tags"
+            - "network,dns,ssl"
+            - "-tls-impersonate"
+            - "-retries"
+            - "1"
+            - "-timeout"
+            - "10"
+            - "-rate-limit"
+            - "50"
+            - "-c"
+            - "10"
+            - "-o"
+            - "/results/nuclei-output.txt"
+            - "-je"
+            - "/results/nuclei-output.json"
+            - "-template-dir"
+            - "/templates"
+          env:
+            - name: HOME
+              value: /tmp
+          volumeMounts:
+            - name: results
+              mountPath: /results
+            - name: nuclei-templates
+              mountPath: /templates
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: scan-results-pvc
+        - name: nuclei-templates
+          emptyDir: {}

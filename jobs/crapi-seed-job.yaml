@@ -1,0 +1,121 @@
+---
+# crAPI user seed job
+# Registers test users in crAPI before Locust traffic generation.
+# Must complete successfully before task locust runs.
+#
+# crAPI requires user registration via the identity API before JWT
+# auth works. This job POSTs to /identity/api/auth/signup for each
+# test user defined in the USERS env var.
+#
+# Usage: task crapi:seed
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: crapi-seed
+  namespace: crapi
+  labels:
+    app: crapi-seed
+    lab: nginx-sec-lab
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: crapi-seed
+    spec:
+      restartPolicy: OnFailure
+
+      initContainers:
+        # Wait for crAPI identity service to be ready before seeding
+        - name: wait-for-crapi
+          image: busybox:1.35
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for crapi-identity:8080..."
+              until wget -qO- http://crapi-identity:8080/identity/api/health 2>/dev/null \
+                | grep -q "ok"; do
+                echo "  not ready yet, retrying in 5s..."
+                sleep 5
+              done
+              echo "crapi-identity is ready"
+
+      containers:
+        - name: seed
+          image: curlimages/curl:latest
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+
+              IDENTITY="http://crapi-identity:8080"
+              USERS='
+              user1@lab.local:Passw0rd!:User One
+              user2@lab.local:Passw0rd!:User Two
+              user3@lab.local:Passw0rd!:User Three
+              '
+
+              echo "=== crAPI User Seeding ==="
+              echo ""
+
+              SUCCESS=0
+              SKIP=0
+              FAIL=0
+
+              for entry in $USERS; do
+                EMAIL=$(echo $entry | cut -d: -f1)
+                PASS=$(echo $entry | cut -d: -f2)
+                NAME=$(echo $entry | cut -d: -f3)
+
+                echo "→ Registering $EMAIL..."
+
+                HTTP_CODE=$(curl -sk -o /tmp/resp.txt -w "%{http_code}" \
+                  -X POST "${IDENTITY}/identity/api/auth/signup" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASS}\",\"name\":\"${NAME}\"}")
+
+                case "$HTTP_CODE" in
+                  200|201)
+                    echo "  ✓ Registered: $EMAIL"
+                    SUCCESS=$((SUCCESS+1))
+                    ;;
+                  400)
+                    BODY=$(cat /tmp/resp.txt)
+                    if echo "$BODY" | grep -qi "already\|exists\|duplicate"; then
+                      echo "  ~ Already exists: $EMAIL (skipping)"
+                      SKIP=$((SKIP+1))
+                    else
+                      echo "  ✗ Failed ($HTTP_CODE): $EMAIL — $(cat /tmp/resp.txt)"
+                      FAIL=$((FAIL+1))
+                    fi
+                    ;;
+                  *)
+                    echo "  ✗ Failed ($HTTP_CODE): $EMAIL — $(cat /tmp/resp.txt)"
+                    FAIL=$((FAIL+1))
+                    ;;
+                esac
+              done
+
+              echo ""
+              echo "=== Seed Summary ==="
+              echo "  Registered: $SUCCESS"
+              echo "  Skipped (already exist): $SKIP"
+              echo "  Failed: $FAIL"
+              echo ""
+
+              if [ "$FAIL" -gt 0 ]; then
+                echo "ERROR: $FAIL user(s) failed to register"
+                exit 1
+              fi
+
+              echo "Seed complete — users ready for Locust"
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"

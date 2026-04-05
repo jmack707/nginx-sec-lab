@@ -1,0 +1,55 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crapi-identity
+  namespace: crapi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crapi-identity
+  template:
+    metadata:
+      labels:
+        app: crapi-identity
+    spec:
+      containers:
+        - name: crapi-identity
+          image: crapi/crapi-identity:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SERVER_PORT
+              value: "8080"
+            - name: DB_NAME
+              value: crapi
+            - name: DB_USER
+              value: admin
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: crapi-db-secret
+                  key: password
+            - name: DB_HOST
+              value: crapi-postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: SMTP_HOST
+              value: mailhog
+            - name: SMTP_PORT
+              value: "1025"
+            - name: SMTP_EMAIL
+              value: no-reply@crapi.local
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: crapi-jwt-secret
+                  key: secret
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

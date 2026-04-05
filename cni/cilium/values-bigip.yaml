@@ -1,0 +1,46 @@
+# cni/cilium/values-bigip.yaml
+# Cilium on kind — BIG-IP VTEP integration for ClusterIP CIS mode
+# Merges with values-base.yaml via: helm install -f values-base.yaml -f values-bigip.yaml
+#
+# Prerequisites on BIG-IP (run task bigip:tunnel:setup):
+#   1. VXLAN profile:  fl-vxlan  (flooding-type multipoint)
+#   2. VXLAN tunnel:   flannel_vxlan  (key 68, local-address = BIG-IP internal IP)
+#   3. Self-IP:        BIG-IP tunnel subnet self-IP (/24 on tunnel VLAN)
+#   4. Static route:   pod CIDR → flannel_vxlan interface
+#
+# Fill in the BIG-IP-specific values below before deploying.
+# Run: task bigip:tunnel:setup to generate TMSH commands for your environment.
+
+# ── VTEP integration ───────────────────────────────────────────────────────
+# VTEP = VXLAN Tunnel Endpoint — tells Cilium about the BIG-IP tunnel
+vtep:
+  enabled: true
+
+  # BIG-IP VXLAN tunnel self-IP (the /24 self-IP on fl-vxlan VLAN)
+  # Set via: task cni:install CNI=cilium BIGIP_VTEP_IP=10.1.6.1
+  endpoint: "BIGIP_VTEP_IP_PLACEHOLDER"
+
+  # Subnet carved from pod CIDR for BIG-IP's tunnel self-IP
+  # Must NOT overlap any node's podCIDR
+  # Set via: task cni:install CNI=cilium BIGIP_VTEP_CIDR=10.1.6.0/24
+  cidr: "BIGIP_VTEP_CIDR_PLACEHOLDER"
+
+  mask: "255.255.255.0"
+
+  # BIG-IP VXLAN tunnel MAC address
+  # Obtain from BIG-IP: tmsh show net tunnels tunnel flannel_vxlan all-properties
+  # Set via: task cni:install CNI=cilium BIGIP_VTEP_MAC=00:50:56:xx:xx:xx
+  mac: "BIGIP_VTEP_MAC_PLACEHOLDER"
+
+# ── Tunnel config override ─────────────────────────────────────────────────
+# Must match the BIG-IP tunnel VNI key (68 for Cilium — keys 1-6 reserved)
+tunnel: vxlan
+
+# ── Enable BPF masquerade for VTEP traffic ─────────────────────────────────
+bpf:
+  masquerade: true
+
+# ── Needed for Cilium → BIG-IP return path ────────────────────────────────
+# Cilium stores BIG-IP VTEP data in its ipcache so pods can route back
+# through the VXLAN tunnel to BIG-IP-sourced traffic
+enableIPv4Masquerade: true

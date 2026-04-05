@@ -1,0 +1,43 @@
+---
+repositories:
+  - name: nginx-stable
+    url: https://helm.nginx.com/stable
+  - name: jetstack
+    url: https://charts.jetstack.io
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+
+helmDefaults:
+  wait: true
+  timeout: 300
+  cleanupOnFail: true
+
+releases:
+  - name: cert-manager
+    namespace: cert-manager
+    createNamespace: true
+    chart: jetstack/cert-manager
+    version: "~1.14"
+    values:
+      - installCRDs: true
+        global:
+          leaderElection:
+            namespace: cert-manager
+
+  - name: nginx-ingress
+    namespace: nginx-ingress
+    createNamespace: true
+    chart: nginx-stable/nginx-ingress
+    version: "~1.1"
+    needs:
+      - cert-manager/cert-manager
+    values:
+      - values/nginx-ingress.yaml
+
+  - name: kube-prometheus-stack
+    namespace: monitoring
+    createNamespace: true
+    chart: prometheus-community/kube-prometheus-stack
+    version: "~57"
+    values:
+      - values/prometheus.yaml
