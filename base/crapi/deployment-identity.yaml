@@ -16,34 +16,83 @@ spec:
     spec:
       containers:
         - name: crapi-identity
-          image: crapi/identity:latest
+          image: crapi/crapi-identity:latest
           ports:
             - containerPort: 8080
           env:
+            # Server
+            - name: SERVER_PORT
+              value: "8080"
+            # Database
             - name: DB_NAME
               value: crapi
             - name: DB_USER
               value: admin
             - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: crapi-db-secret
-                  key: password
+              value: "crapisecretpassword"
             - name: DB_HOST
               value: crapi-postgres
             - name: DB_PORT
               value: "5432"
+            # JWT
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: crapi-jwt-secret
+                  key: secret
+            - name: JWKS
+              value: "http://crapi-identity:8080/identity/api/auth/jwks.json"
+            # SMTP (mailhog)
             - name: SMTP_HOST
               value: mailhog
             - name: SMTP_PORT
               value: "1025"
             - name: SMTP_EMAIL
               value: no-reply@crapi.local
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: crapi-jwt-secret
-                  key: secret
+            - name: SMTP_FROM
+              value: no-reply@crapi.local
+            - name: SMTP_AUTH
+              value: "false"
+            - name: SMTP_PASS
+              value: "nopassword"
+            - name: SMTP_STARTTLS
+              value: "false"
+            - name: SMTP_SSL
+              value: "disable"
+            # Mailhog
+            - name: MAILHOG_HOST
+              value: mailhog
+            - name: MAILHOG_PORT
+              value: "1025"
+            - name: MAILHOG_DOMAIN
+              value: crapi.local
+            # TLS (disabled)
+            - name: TLS_ENABLED
+              value: "false"
+            - name: TLS_KEYSTORE_TYPE
+              value: "PKCS12"
+            - name: TLS_KEYSTORE
+              value: "/app/certs/server.pfx"
+            - name: TLS_KEYSTORE_PASSWORD
+              value: "crapi"
+            - name: TLS_KEY_PASSWORD
+              value: "crapi"
+            - name: TLS_KEY_ALIAS
+              value: "crapi"
+            # API Gateway
+            - name: API_GATEWAY_URL
+              value: "http://crapi-identity:8080"
+            # Features
+            - name: ENABLE_SHELL_INJECTION
+              value: "false"
+            - name: MAX_UPLOAD_FILE_SIZE
+              value: "16"
+            - name: CRONJOB_INITIALDELAY
+              value: "8000"
+            - name: CRONJOB_FIXEDRATE
+              value: "900000"
+            - name: MAIL_DOMAIN
+              value: "crapi.local"
           resources:
             requests:
               memory: "256Mi"

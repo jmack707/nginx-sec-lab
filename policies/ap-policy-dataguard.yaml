@@ -7,14 +7,11 @@ metadata:
 spec:
   policy:
     name: dataguard-alarm
-    description: "DataGuard policy — alarms on PII in responses (credit cards, SSNs)"
+    description: "DataGuard policy — alarms on PII in responses"
     template:
       name: POLICY_TEMPLATE_NGINX_BASE
-
     applicationLanguage: utf-8
     enforcementMode: blocking
-
-    # ── Data Guard — scrub sensitive data from responses ───────────────
     data-guard:
       enabled: true
       maskData: true
@@ -22,20 +19,11 @@ spec:
       usSocialSecurityNumbers: true
       enforcementMode: ignore-urls-in-list
       enforcementUrls: []
-
     blocking-settings:
       violations:
         - name: VIOL_DATA_GUARD
           alarm: true
           block: true
-        - name: VIOL_ATTACK_SIGNATURE
-          alarm: true
-          block: true
         - name: VIOL_HTTP_PROTOCOL
           alarm: true
           block: true
-
-    signature-sets:
-      - name: All Signatures
-        block: true
-        alarm: true

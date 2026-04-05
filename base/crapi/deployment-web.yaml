@@ -14,12 +14,39 @@ spec:
       labels:
         app: crapi-web
     spec:
+      initContainers:
+        - name: wait-for-identity
+          image: curlimages/curl:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for crapi-identity..."
+              until curl -sf http://crapi-identity:8080/identity/health_check >/dev/null 2>&1; do
+                echo "  identity not ready, retrying in 5s..."
+                sleep 5
+              done
+              echo "identity is ready"
       containers:
         - name: crapi-web
-          image: crapi/frontend:latest
+          image: crapi/crapi-web:latest
           ports:
-            - containerPort: 8888
+            - containerPort: 80
           env:
+            - name: COMMUNITY_SERVICE
+              value: "crapi-community:8087"
+            - name: IDENTITY_SERVICE
+              value: "crapi-identity:8080"
+            - name: WORKSHOP_SERVICE
+              value: "crapi-workshop:8000"
+            - name: CHATBOT_SERVICE
+              value: "crapi-identity:8080"
+            - name: MAILHOG_WEB_SERVICE
+              value: "mailhog:8025"
+            - name: TLS_ENABLED
+              value: "false"
+            - name: HTTP_PROTOCOL
+              value: "http"
             - name: REACT_APP_IDENTITY_SERVICE
               value: "https://crapi.lab.local/identity"
             - name: REACT_APP_COMMUNITY_SERVICE
@@ -35,7 +62,7 @@ spec:
               cpu: "100m"
           readinessProbe:
             httpGet:
-              path: /
-              port: 8888
+              path: /health
+              port: 80
             initialDelaySeconds: 10
             periodSeconds: 10

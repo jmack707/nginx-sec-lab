@@ -2,44 +2,28 @@ controller:
   kind: deployment
   replicaCount: 1
 
-  # Enable App Protect WAF
+  # App Protect WAF requires NGINX Plus -- disabled for OSS
   appprotect:
-    enable: true
+    enable: false
   appprotectdos:
     enable: false
 
-  # Enable custom resource definitions (VirtualServer, Policy, etc.)
   enableCustomResources: true
   enablePreviewPolicies: true
 
-  # Expose metrics for Prometheus scraping
   prometheus:
     create: true
     port: 9113
 
-  # Service type — kind maps this to host ports 8080/8443
+  # LoadBalancer -- k3d routes external ports to this service
   service:
-    type: NodePort
-    httpPort:
-      nodePort: 30080
-    httpsPort:
-      nodePort: 30443
+    type: LoadBalancer
     externalTrafficPolicy: Local
 
-  # Node selector — schedule on control-plane which has the port mapping
-  nodeSelector:
-    ingress-ready: "true"
-
-  tolerations:
-    - key: "node-role.kubernetes.io/control-plane"
-      operator: "Equal"
-      effect: "NoSchedule"
-
-  # Default TLS secret (self-signed fallback)
+  # Default TLS secret (created by pre-deploy.sh)
   defaultTLS:
     secret: nginx-ingress/default-server-secret
 
-  # Global NGINX settings
   config:
     name: nginx-config
     entries:
@@ -49,9 +33,3 @@ controller:
       server-tokens: "off"
       ssl-protocols: "TLSv1.2 TLSv1.3"
       ssl-ciphers: "HIGH:!aNULL:!MD5"
-      log-format: |
-        $remote_addr - $remote_user [$time_local]
-        "$request" $status $body_bytes_sent
-        "$http_referer" "$http_user_agent"
-        rt=$request_time uct=$upstream_connect_time
-        uht=$upstream_header_time urt=$upstream_response_time

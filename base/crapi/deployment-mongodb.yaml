@@ -19,6 +19,13 @@ spec:
           image: mongo:4.4
           ports:
             - containerPort: 27017
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              value: "admin"
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              value: "crapisecretpassword"
+            - name: MONGO_INITDB_DATABASE
+              value: "crapi"
           resources:
             requests:
               memory: "256Mi"

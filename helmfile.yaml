@@ -39,5 +39,7 @@ releases:
     createNamespace: true
     chart: prometheus-community/kube-prometheus-stack
     version: "~57"
+    timeout: 600
+    # No dependency on nginx-ingress -- deploys in parallel, won't block
     values:
       - values/prometheus.yaml

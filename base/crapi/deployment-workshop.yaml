@@ -16,31 +16,49 @@ spec:
     spec:
       containers:
         - name: crapi-workshop
-          image: crapi/workshop:latest
+          image: crapi/crapi-workshop:latest
           ports:
-            - containerPort: 8085
+            - containerPort: 8000
           env:
+            - name: SERVER_PORT
+              value: "8000"
             - name: DB_NAME
               value: crapi
             - name: DB_USER
               value: admin
             - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: crapi-db-secret
-                  key: password
+              value: "crapisecretpassword"
             - name: DB_HOST
               value: crapi-postgres
             - name: DB_PORT
               value: "5432"
+            # No http:// prefix -- the code adds it
             - name: IDENTITY_SERVICE
-              value: "http://crapi-identity:8080"
+              value: "crapi-identity:8080"
+            - name: INTERNAL_SERVICE_URL
+              value: "crapi-identity:8080"
+            - name: API_GATEWAY_URL
+              value: "crapi-identity:8080"
+            - name: MONGO_DB_USER
+              value: "admin"
+            - name: MONGO_DB_PASSWORD
+              value: "crapisecretpassword"
             - name: MONGO_DB_HOST
               value: crapi-mongodb
             - name: MONGO_DB_PORT
               value: "27017"
             - name: MONGO_DB_NAME
               value: crapi
+            - name: SECRET_KEY
+              value: "crapi-django-insecure-jwt-secret-key"
+            - name: AWS_ACCESS_KEY_ID
+              value: "fake_key"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "fake_secret"
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: S3_BUCKET
+              value: "crapi-storage"
           resources:
             requests:
               memory: "128Mi"

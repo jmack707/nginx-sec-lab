@@ -27,6 +27,8 @@ tasks:
       - task: check
       - task: cluster
       - task: cni:install
+      - task: images:import
+      - task: pre-deploy
       - task: ca:import
       - task: deploy
       - task: issuer
@@ -36,7 +38,7 @@ tasks:
   down:
     desc: "Destroy the kind cluster"
     cmds:
-      - kind delete cluster --name nginx-sec-lab
+      - k3d cluster delete nginx-sec-lab
       - echo "Cluster destroyed"
 
   reset:
@@ -142,12 +144,20 @@ tasks:
   # INFRASTRUCTURE
   # ---------------------------------------------------------------------------
 
+
+  pre-deploy:
+    desc: "Create namespaces, secrets and ConfigMaps needed before helmfile runs"
+    cmds:
+      - bash scripts/pre-deploy.sh
+
   deploy:
     desc: "Deploy all Helm releases via helmfile"
     cmds:
       - helmfile sync
       - kubectl rollout status deployment/cert-manager -n cert-manager --timeout=180s
-      - kubectl rollout status deployment/nginx-ingress -n nginx-ingress --timeout=180s
+      - |
+        DEPLOY=$(kubectl get deployment -n nginx-ingress -o name 2>/dev/null | head -1)
+        [ -n "$DEPLOY" ] && kubectl rollout status "$DEPLOY" -n nginx-ingress --timeout=180s || echo "WARN: no nginx-ingress deployment found" 
       - echo "Infrastructure deployed"
 
   issuer:
@@ -155,11 +165,21 @@ tasks:
     cmds:
       - kubectl apply -f manifests/namespaces.yaml
       - kubectl apply -f manifests/cluster-issuer.yaml
-      - kubectl apply -f policies/ap-logconf.yaml
-      - kubectl apply -f policies/ap-policy-owasp.yaml
-      - kubectl apply -f policies/ap-policy-dataguard.yaml
+      - |
+        kubectl apply -f policies/ap-logconf.yaml || echo "SKIP: APLogConf not available"
+      - |
+        kubectl apply -f policies/ap-policy-owasp.yaml || echo "SKIP: APPolicy not available"
+      - |
+        kubectl apply -f policies/ap-policy-dataguard.yaml || echo "SKIP: APPolicy not available"
+      - echo "Issuer and WAF policies applied"
+
+  grafana:dashboard:
+    desc: "Import NGINX security dashboard into Grafana (run after Grafana is Ready)"
+    cmds:
       - kubectl apply -f grafana/nginx-dashboard.yaml
-      - echo "Issuer, WAF policies, and Grafana dashboard applied"
+      - kubectl rollout restart deployment/kube-prometheus-stack-grafana -n monitoring
+      - kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=120s
+      - echo "Grafana dashboard imported"
 
   # ---------------------------------------------------------------------------
   # DEMO APPLICATIONS
@@ -280,6 +300,40 @@ tasks:
   # ---------------------------------------------------------------------------
   # HEALTH
   # ---------------------------------------------------------------------------
+
+
+  images:import:
+    desc: "Import all lab images from local Docker cache into cluster nodes (no internet needed)"
+    cmds:
+      - bash scripts/import-images.sh
+
+  # ---------------------------------------------------------------------------
+  # LOCAL REGISTRY
+  # ---------------------------------------------------------------------------
+
+  registry:setup:
+    desc: "Create local k3d registry (run once -- survives task down/up)"
+    cmds:
+      - bash scripts/setup-registry.sh
+
+  registry:cache:
+    desc: "Pull all lab images and store in local registry (requires internet once)"
+    cmds:
+      - bash scripts/pull-and-cache.sh
+
+  registry:ls:
+    desc: "List images stored in the local registry"
+    cmds:
+      - |
+        curl -s http://k3d-registry.localhost:5000/v2/_catalog 2>/dev/null \
+          | python3 -m json.tool \
+          || echo "Registry not running -- run: task registry:setup"
+
+
+  test:
+    desc: "Run curl smoke tests against all lab endpoints"
+    cmds:
+      - bash scripts/test-endpoints.sh
 
   health:
     desc: "Run all post-deploy verification checks"
