@@ -67,6 +67,37 @@ if ! docker inspect k3d-registry.localhost &>/dev/null; then
   exit 1
 fi
 
+# Check Docker Hub auth
+if ! cat ~/.docker/config.json 2>/dev/null | grep -q "index.docker.io"; then
+  echo -e "${YELLOW}WARNING: Not logged in to Docker Hub.${NC}"
+  echo -e "         Run: ${CYAN}docker login${NC}  then retry"
+  echo -e "         Most images require an authenticated pull (rate limit)"
+  echo ""
+fi
+
+# Check NGINX registry auth (only needed for NGINX Plus)
+# For OSS nginx/nginx-ingress, Docker Hub login is sufficient
+# NGINX private registry auth (required for NGINX Plus / App Protect images)
+# JWT token is used as the USERNAME, password is literally "none"
+# Get token: https://my.f5.com > My Products > NGINX > Manage Subscriptions
+#
+# docker login private-registry.nginx.com \
+#   --username=<JWT_TOKEN> \
+#   --password=none
+NGINX_PLUS=false
+if grep -q "private-registry.nginx.com" values/nginx-ingress.yaml 2>/dev/null; then
+  NGINX_PLUS=true
+  if ! cat ~/.docker/config.json 2>/dev/null | grep -q "private-registry.nginx.com"; then
+    echo -e "${YELLOW}WARNING: NGINX Plus detected but not logged in to private-registry.nginx.com${NC}"
+    echo -e "         Run:"
+    echo -e "         ${CYAN}docker login private-registry.nginx.com \${NC}"
+    echo -e "         ${CYAN}  --username=<JWT_TOKEN> \${NC}"
+    echo -e "         ${CYAN}  --password=none${NC}"
+    echo -e "         Get token: https://my.f5.com > My Products > NGINX > Manage Subscriptions"
+    echo ""
+  fi
+fi
+
 echo "INFRASTRUCTURE"
 # quay.io images - include registry prefix in path
 cache "quay.io/jetstack/cert-manager-controller:v1.14.7"  "quay.io/jetstack/cert-manager-controller:v1.14.7"

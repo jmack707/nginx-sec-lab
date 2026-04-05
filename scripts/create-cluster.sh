@@ -4,6 +4,24 @@
 # Binds LoadBalancer ports to LAB_HOST_IP for external client access.
 set -euo pipefail
 
+# ── Pre-flight: clean up any stale NAT rules ─────────────────────────────
+# Rogue PREROUTING DNAT rules from previous deployments will silently
+# intercept all port 80/443 traffic before k3d rules run.
+# Check and remove any rules not created by this cluster.
+echo "Checking for stale NAT rules..."
+STALE=$(sudo iptables -t nat -L PREROUTING -n --line-numbers 2>/dev/null   | awk '/DNAT.*dpt:(80|443)/ && !/172\.19\.|172\.16\./ {print $1}'   | sort -rn)
+if [ -n "$STALE" ]; then
+  echo "  WARNING: Found stale DNAT rules -- removing:"
+  for num in $STALE; do
+    rule=$(sudo iptables -t nat -L PREROUTING -n --line-numbers | grep "^${num} ")
+    echo "    Removing: $rule"
+    sudo iptables -t nat -D PREROUTING "$num"
+  done
+  echo "  Stale rules removed"
+else
+  echo "  No stale rules found"
+fi
+
 # Load lab config
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../lab.env"
@@ -60,6 +78,19 @@ fi
 echo ""
 echo "Cluster ready:"
 kubectl get nodes -o wide
+# Allow externally-routed traffic through Docker's FORWARD chain.
+# Docker sets FORWARD policy to DROP and only adds rules for its own bridge.
+# Traffic arriving on ens18 (external clients) needs explicit acceptance
+# in DOCKER-USER which is checked before Docker's own rules.
+PRIMARY_IF=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'dev \K\S+' || echo "ens18")
+echo "Adding DOCKER-USER FORWARD rule for ${PRIMARY_IF}..."
+if ! sudo iptables -C DOCKER-USER -i "${PRIMARY_IF}" -j ACCEPT 2>/dev/null; then
+  sudo iptables -I DOCKER-USER -i "${PRIMARY_IF}" -j ACCEPT
+  echo "  Rule added -- external clients can now reach the cluster"
+else
+  echo "  Rule already present"
+fi
+
 echo ""
 echo "External access:"
 echo "  http://${LAB_HOST_IP}   https://${LAB_HOST_IP}"

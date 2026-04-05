@@ -36,7 +36,7 @@ tasks:
       - task: health
 
   down:
-    desc: "Destroy the kind cluster"
+    desc: "Destroy the k3d cluster"
     cmds:
       - k3d cluster delete nginx-sec-lab
       - echo "Cluster destroyed"
@@ -52,7 +52,7 @@ tasks:
   # ---------------------------------------------------------------------------
 
   cluster:
-    desc: "Create kind cluster. Override CNI with: CNI=cilium task cluster"
+    desc: "Create k3d cluster. Override CNI with: CNI=cilium task cluster"
     cmds:
       - bash scripts/create-cluster.sh
 
@@ -314,7 +314,7 @@ tasks:
   registry:setup:
     desc: "Create local k3d registry (run once -- survives task down/up)"
     cmds:
-      - bash scripts/setup-registry.sh
+      - sudo bash scripts/setup-registry.sh
 
   registry:cache:
     desc: "Pull all lab images and store in local registry (requires internet once)"

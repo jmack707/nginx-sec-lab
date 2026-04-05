@@ -4,7 +4,7 @@
 ## Overview
 
 This directory contains Helm values for deploying Cilium as the CNI on the
-nginx-sec-lab kind cluster. Two modes are supported:
+nginx-sec-lab k3d cluster. Two modes are supported:
 
 | Mode | Values file | BIG-IP CIS pool-member-type |
 |------|------------|----------------------------|

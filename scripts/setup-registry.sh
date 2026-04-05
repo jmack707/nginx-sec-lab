@@ -18,16 +18,21 @@ else
 fi
 
 # Configure Docker daemon to allow HTTP access to local registry
-DAEMON_JSON="/etc/docker/daemon.json"
-if ! docker info 2>/dev/null | grep -q "k3d-registry.localhost"; then
-  echo ""
+if docker info 2>/dev/null | grep -q "k3d-registry.localhost"; then
+  echo "Docker insecure registry already configured -- skipping"
+else
   echo "Configuring Docker to allow insecure registry access..."
+  DAEMON_JSON="/etc/docker/daemon.json"
+
   if [ -f "$DAEMON_JSON" ]; then
-    # Merge with existing config using python3
+    # Merge with existing config
     python3 << PYEOF
-import json
-with open('${DAEMON_JSON}') as f:
-    config = json.load(f)
+import json, sys
+try:
+    with open('${DAEMON_JSON}') as f:
+        config = json.load(f)
+except:
+    config = {}
 regs = config.get('insecure-registries', [])
 entry = '${REGISTRY_NAME}:${REGISTRY_PORT}'
 if entry not in regs:
@@ -40,12 +45,9 @@ else:
     print(f'  {entry} already in {DAEMON_JSON}')
 PYEOF
   else
-    cat > "$DAEMON_JSON" << JSONEOF
-{
-  "insecure-registries": ["${REGISTRY_NAME}:${REGISTRY_PORT}"]
-}
-JSONEOF
-    echo "  Created ${DAEMON_JSON}"
+    echo "  Creating ${DAEMON_JSON}..."
+    echo "{\"insecure-registries\":[\"${REGISTRY_NAME}:${REGISTRY_PORT}\"]}" \
+      > "${DAEMON_JSON}"
   fi
 
   echo "  Restarting Docker daemon..."
@@ -58,6 +60,4 @@ echo ""
 echo "Registry: ${REGISTRY_NAME}:${REGISTRY_PORT}"
 echo "Status:   $(docker inspect --format='{{.State.Status}}' ${REGISTRY_NAME} 2>/dev/null || echo 'unknown')"
 echo ""
-echo "Next steps:"
-echo "  task registry:cache   -- pull and cache all lab images (needs internet once)"
-echo "  task up               -- cluster will use local registry automatically"
+echo "Next: task registry:cache   -- pull and cache all lab images"

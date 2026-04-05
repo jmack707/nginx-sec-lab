@@ -38,7 +38,20 @@ newgrp docker    # pick up docker group without logging out
 # 2. Verify
 task check
 
-# 3. Spin up the lab (CA created automatically on first run)
+# 3. Login to container registries (one-time)
+docker login                                        # Docker Hub (all demo apps)
+
+# NGINX Plus / App Protect only (OSS lab skips this):
+# docker login private-registry.nginx.com \
+#   --username=<JWT_TOKEN> \
+#   --password=none
+# Get token: https://my.f5.com > My Products > NGINX > Manage Subscriptions
+
+# 4. Set up local image cache (one-time -- survives task reset)
+task registry:setup
+task registry:cache
+
+# 5. Spin up the lab (CA created automatically on first run)
 task up
 
 # 4. Verify everything is healthy
