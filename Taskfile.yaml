@@ -37,7 +37,7 @@ tasks:
   down:
     desc: "Destroy the kind cluster"
     cmds:
-      - kind delete cluster --name nginx-sec-lab
+      - k3d cluster delete nginx-sec-lab
       - echo "Cluster destroyed"
 
   reset:
@@ -153,7 +153,7 @@ tasks:
     cmds:
       - helmfile sync
       - kubectl rollout status deployment/cert-manager -n cert-manager --timeout=180s
-      - kubectl rollout status deployment/nginx-ingress-controller -n nginx-ingress --timeout=180s
+      - kubectl rollout status deployment/nginx-ingress-controller -n nginx-ingress --timeout=300s
       - echo "Infrastructure deployed"
 
   issuer:
