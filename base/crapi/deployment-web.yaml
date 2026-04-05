@@ -16,16 +16,10 @@ spec:
     spec:
       containers:
         - name: crapi-web
-          image: crapi/crapi-web:latest
+          image: crapi/frontend:latest
           ports:
             - containerPort: 8888
           env:
-            - name: COMMUNITY_SERVICE
-              value: "crapi-community:8087"
-            - name: IDENTITY_SERVICE
-              value: "crapi-identity:8080"
-            - name: WORKSHOP_SERVICE
-              value: "crapi-workshop:8888"
             - name: REACT_APP_IDENTITY_SERVICE
               value: "https://crapi.lab.local/identity"
             - name: REACT_APP_COMMUNITY_SERVICE

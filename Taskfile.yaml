@@ -28,7 +28,6 @@ tasks:
       - task: cluster
       - task: cni:install
       - task: ca:import
-      - task: pre-deploy
       - task: deploy
       - task: issuer
       - task: apps:up
@@ -37,7 +36,7 @@ tasks:
   down:
     desc: "Destroy the kind cluster"
     cmds:
-      - k3d cluster delete nginx-sec-lab
+      - kind delete cluster --name nginx-sec-lab
       - echo "Cluster destroyed"
 
   reset:
@@ -143,17 +142,12 @@ tasks:
   # INFRASTRUCTURE
   # ---------------------------------------------------------------------------
 
-  pre-deploy:
-    desc: "Create resources needed before helmfile sync"
-    cmds:
-      - bash scripts/pre-deploy.sh
-
   deploy:
     desc: "Deploy all Helm releases via helmfile"
     cmds:
       - helmfile sync
       - kubectl rollout status deployment/cert-manager -n cert-manager --timeout=180s
-      - kubectl rollout status deployment/nginx-ingress-controller -n nginx-ingress --timeout=300s
+      - kubectl rollout status deployment/nginx-ingress -n nginx-ingress --timeout=180s
       - echo "Infrastructure deployed"
 
   issuer:
@@ -161,12 +155,9 @@ tasks:
     cmds:
       - kubectl apply -f manifests/namespaces.yaml
       - kubectl apply -f manifests/cluster-issuer.yaml
-      - cmd: kubectl apply -f policies/ap-logconf.yaml
-        ignore_error: true
-      - cmd: kubectl apply -f policies/ap-policy-owasp.yaml
-        ignore_error: true
-      - cmd: kubectl apply -f policies/ap-policy-dataguard.yaml
-        ignore_error: true
+      - kubectl apply -f policies/ap-logconf.yaml
+      - kubectl apply -f policies/ap-policy-owasp.yaml
+      - kubectl apply -f policies/ap-policy-dataguard.yaml
       - kubectl apply -f grafana/nginx-dashboard.yaml
       - echo "Issuer, WAF policies, and Grafana dashboard applied"
 

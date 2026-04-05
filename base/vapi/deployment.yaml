@@ -51,7 +51,8 @@ spec:
               memory: "256Mi"
               cpu: "300m"
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /vapi
               port: 80
-            initialDelaySeconds: 15
+            initialDelaySeconds: 20
             periodSeconds: 10

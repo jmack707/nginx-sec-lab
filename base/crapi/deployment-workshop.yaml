@@ -16,12 +16,10 @@ spec:
     spec:
       containers:
         - name: crapi-workshop
-          image: crapi/crapi-workshop:latest
+          image: crapi/workshop:latest
           ports:
             - containerPort: 8085
           env:
-            - name: SERVER_PORT
-              value: "8888"
             - name: DB_NAME
               value: crapi
             - name: DB_USER
@@ -37,10 +35,6 @@ spec:
               value: "5432"
             - name: IDENTITY_SERVICE
               value: "http://crapi-identity:8080"
-            - name: MONGO_DB_USER
-              value: "admin"
-            - name: MONGO_DB_PASSWORD
-              value: "crapisecretpassword"
             - name: MONGO_DB_HOST
               value: crapi-mongodb
             - name: MONGO_DB_PORT

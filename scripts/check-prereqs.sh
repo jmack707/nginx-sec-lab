@@ -14,17 +14,12 @@ NC='\033[0m'
 PASS=0
 FAIL=0
 
-# Extract a single integer part from a version string
 ver_part() {
   echo "$1" | cut -d. -f"$2" | tr -dc '0-9'
 }
 
 check() {
-  local name="$1"
-  local cmd="$2"
-  local version_cmd="$3"
-  local min_version="$4"
-  local install_hint="$5"
+  local name="$1" cmd="$2" version_cmd="$3" min_version="$4" install_hint="$5"
 
   if ! command -v "$cmd" &>/dev/null; then
     echo -e "  ${RED}MISSING${NC}  $name"
@@ -42,12 +37,10 @@ check() {
     return
   fi
 
-  # Extract major, minor, patch individually - avoids read/IFS issues with
-  # versions that have more than 3 components or non-numeric suffixes
   local maj min patch req_maj req_min req_patch
-  maj=$(ver_part "$version" 1);     maj=${maj:-0}
-  min=$(ver_part "$version" 2);     min=${min:-0}
-  patch=$(ver_part "$version" 3);   patch=${patch:-0}
+  maj=$(ver_part "$version" 1);         maj=${maj:-0}
+  min=$(ver_part "$version" 2);         min=${min:-0}
+  patch=$(ver_part "$version" 3);       patch=${patch:-0}
   req_maj=$(ver_part "$min_version" 1); req_maj=${req_maj:-0}
   req_min=$(ver_part "$min_version" 2); req_min=${req_min:-0}
   req_patch=$(ver_part "$min_version" 3); req_patch=${req_patch:-0}
@@ -66,12 +59,10 @@ check() {
 }
 
 check_port() {
-  local port="$1"
-  local desc="$2"
+  local port="$1" desc="$2"
   if ss -tlnp 2>/dev/null | grep -q ":${port} " || \
      netstat -tlnp 2>/dev/null | grep -q ":${port} "; then
-    echo -e "  ${RED}IN USE${NC}   Port $port ($desc)"
-    echo -e "           Free this port before running 'task cluster'"
+    echo -e "  ${RED}IN USE${NC}   Port $port ($desc) -- free before 'task cluster'"
     FAIL=$((FAIL+1))
   else
     echo -e "  ${GREEN}FREE${NC}     Port $port ($desc)"
@@ -85,7 +76,6 @@ echo -e "${CYAN}  nginx-sec-lab -- Prerequisite Check${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-# OS
 echo "HOST"
 if grep -qi "ubuntu" /etc/os-release 2>/dev/null; then
   UBUNTU_VER=$(grep VERSION_ID /etc/os-release | cut -d= -f2 | tr -d '"')
@@ -96,46 +86,37 @@ else
   echo -e "  ${YELLOW}WARN${NC}     OS: $OS (Ubuntu 22.04/24.04 recommended)"
 fi
 
-# Required tools
 echo ""
 echo "REQUIRED TOOLS"
 
 check "Docker Engine" "docker" \
   "docker version --format '{{.Server.Version}}'" \
-  "20.10" \
-  "sudo bash scripts/install-ubuntu.sh"
+  "20.10" "sudo bash scripts/install-ubuntu.sh"
 
 check "kubectl" "kubectl" \
   "kubectl version --client -o json 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d['clientVersion']['gitVersion'].lstrip('v'))\"" \
-  "1.28" \
-  "sudo bash scripts/install-ubuntu.sh"
+  "1.28" "sudo bash scripts/install-ubuntu.sh"
 
-check "kind" "kind" \
-  "kind version" \
-  "0.20" \
-  "sudo bash scripts/install-ubuntu.sh"
+check "k3d" "k3d" \
+  "k3d version" \
+  "5.6" "sudo bash scripts/install-ubuntu.sh"
 
 check "helm" "helm" \
   "helm version --short" \
-  "3.13" \
-  "curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
+  "3.13" "curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
 
 check "helmfile" "helmfile" \
   "helmfile version" \
-  "0.160" \
-  "sudo bash scripts/install-ubuntu.sh"
+  "0.160" "sudo bash scripts/install-ubuntu.sh"
 
 check "task" "task" \
   "task --version" \
-  "3.30" \
-  "sudo bash scripts/install-ubuntu.sh"
+  "3.30" "sudo bash scripts/install-ubuntu.sh"
 
 check "git" "git" \
   "git --version" \
-  "2.30" \
-  "sudo apt-get install -y git"
+  "2.30" "sudo apt-get install -y git"
 
-# Helm plugins
 echo ""
 echo "HELM PLUGINS"
 if command -v helm &>/dev/null && helm plugin list 2>/dev/null | grep -q "diff"; then
@@ -147,38 +128,30 @@ else
   FAIL=$((FAIL+1))
 fi
 
-# Optional tools
 echo ""
 echo "OPTIONAL"
 
 check "step" "step" \
   "step version" \
-  "0.24" \
-  "sudo bash scripts/install-ubuntu.sh  (used for JWT inspection and mTLS testing)"
+  "0.24" "sudo bash scripts/install-ubuntu.sh  (JWT inspection and mTLS testing)"
 
 check "cilium CLI" "cilium" \
   "cilium version --client" \
-  "0.15" \
-  "sudo bash scripts/install-ubuntu.sh"
+  "0.15" "sudo bash scripts/install-ubuntu.sh  (CNI=cilium only)"
 
 check "python3" "python3" \
   "python3 --version" \
-  "3.8" \
-  "sudo apt-get install -y python3"
+  "3.8" "sudo apt-get install -y python3"
 
 check "jq" "jq" \
   "jq --version" \
-  "1.6" \
-  "sudo apt-get install -y jq"
+  "1.6" "sudo apt-get install -y jq"
 
-# Ports
 echo ""
 echo "HOST PORTS  (must be free before 'task cluster')"
-check_port 8080 "HTTP  -> NGINX Ingress"
-check_port 8443 "HTTPS -> NGINX Ingress"
-check_port 9000 "step CA ACME"
+check_port 80  "HTTP  -> k3d LoadBalancer"
+check_port 443 "HTTPS -> k3d LoadBalancer"
 
-# Docker daemon
 echo ""
 echo "DOCKER"
 if docker info &>/dev/null; then
@@ -188,11 +161,9 @@ if docker info &>/dev/null; then
 else
   echo -e "  ${RED}FAIL${NC}     Docker daemon not running"
   echo -e "           Run: ${CYAN}sudo systemctl start docker${NC}"
-  echo -e "           Or add user to docker group: ${CYAN}newgrp docker${NC}"
   FAIL=$((FAIL+1))
 fi
 
-# Kernel settings
 echo ""
 echo "KERNEL"
 IP_FWD=$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)
@@ -200,7 +171,7 @@ if [[ "$IP_FWD" == "1" ]]; then
   echo -e "  ${GREEN}OK${NC}       net.ipv4.ip_forward = 1"
   PASS=$((PASS+1))
 else
-  echo -e "  ${RED}FAIL${NC}     net.ipv4.ip_forward = 0  (required for kind routing)"
+  echo -e "  ${RED}FAIL${NC}     net.ipv4.ip_forward = 0"
   echo -e "           Fix: ${CYAN}echo 'net.ipv4.ip_forward=1' | sudo tee -a /etc/sysctl.conf && sudo sysctl -p${NC}"
   FAIL=$((FAIL+1))
 fi
@@ -214,18 +185,15 @@ else
   echo -e "           Fix: ${CYAN}sudo bash scripts/install-ubuntu.sh${NC}"
 fi
 
-# CA certificate
 echo ""
 echo "LOCAL CA"
 if [[ -f "root_ca.crt" && -f "root_ca.key" ]]; then
   echo -e "  ${GREEN}OK${NC}       root_ca.crt and root_ca.key found"
   PASS=$((PASS+1))
 else
-  echo -e "  ${YELLOW}WARN${NC}     root_ca.crt / root_ca.key not found (will be created by task ca:init)"
-
+  echo -e "  ${YELLOW}WARN${NC}     root_ca.crt / root_ca.key not found (created automatically by task up)"
 fi
 
-# Summary
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 if (( FAIL == 0 )); then

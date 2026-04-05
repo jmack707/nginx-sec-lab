@@ -16,12 +16,10 @@ spec:
     spec:
       containers:
         - name: crapi-identity
-          image: crapi/crapi-identity:latest
+          image: crapi/identity:latest
           ports:
             - containerPort: 8080
           env:
-            - name: SERVER_PORT
-              value: "8080"
             - name: DB_NAME
               value: crapi
             - name: DB_USER

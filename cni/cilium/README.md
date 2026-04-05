@@ -31,7 +31,7 @@ CIS uses NodePort mode — BIG-IP pool members are node IPs.
 
 1. BIG-IP VE running and reachable from Ubuntu host
 2. BIG-IP SDN license active
-3. BIG-IP internal self-IP has L2/L3 path to kind bridge (172.18.0.0/16)
+3. BIG-IP internal self-IP has L2/L3 path to k3d bridge network
 
 ### Step-by-step
 
@@ -79,11 +79,11 @@ task cni:hubble
 | Network | CIDR | Notes |
 |---------|------|-------|
 | Pod network | 10.244.0.0/16 | Managed by Cilium |
-| Control-plane node pods | 10.244.0.0/24 | Auto-assigned by kind |
-| Worker 1 pods | 10.244.1.0/24 | Auto-assigned by kind |
-| Worker 2 pods | 10.244.2.0/24 | Auto-assigned by kind |
+| Control-plane node pods | 10.244.0.0/24 | Auto-assigned by k3d |
+| Worker 1 pods | 10.244.1.0/24 | Auto-assigned by k3d |
+| Worker 2 pods | 10.244.2.0/24 | Auto-assigned by k3d |
 | BIG-IP VTEP subnet | 10.1.6.0/24 | Must NOT overlap above |
-| kind node bridge | 172.18.0.0/16 | Docker bridge — BIG-IP must route here |
+| k3d node bridge | 172.18.0.0/16 | Docker bridge — BIG-IP must route here |
 
 **Critical:** The BIG-IP VTEP self-IP subnet (10.1.6.0/24) must be outside
 the pod CIDR (10.244.0.0/16). Using an overlapping subnet causes silent

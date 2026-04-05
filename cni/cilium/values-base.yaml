@@ -1,26 +1,26 @@
 # cni/cilium/values-base.yaml
-# Cilium on kind — baseline config, no BIG-IP VTEP
+# Cilium on k3d — baseline config, no BIG-IP VTEP
 # Use with: task cni:install CNI=cilium
 # CIS pool-member-type: nodeport (BIG-IP cannot reach pod IPs without VTEP)
 
 # ── Tunnel mode ────────────────────────────────────────────────────────────
-# VXLAN is required for kind (kind nodes are Docker containers — no native routing)
+# VXLAN is required for kind (k3d nodes are Docker containers — no native routing)
 tunnel: vxlan
 
 # ── kube-proxy compatibility ───────────────────────────────────────────────
-# kind ships with kube-proxy — do NOT replace it in base mode
+# k3s ships with kube-proxy — do NOT replace it in base mode
 # Set to "partial" to enable NodePort/ExternalIP handling by Cilium while
 # keeping kube-proxy for ClusterIP. Full replacement breaks kind networking.
 kubeProxyReplacement: "disabled"
 
 # ── IPAM ──────────────────────────────────────────────────────────────────
 ipam:
-  mode: "kubernetes"              # Respect podCIDR assigned by kind per node
+  mode: "kubernetes"              # Respect podCIDR assigned by k3d per node
   operator:
     clusterPoolIPv4PodCIDRList:
       - "10.244.0.0/16"
 
-# ── kind-specific settings ─────────────────────────────────────────────────
+# ── k3d-specific settings ─────────────────────────────────────────────────
 # Disable features that require hardware/bare-metal capabilities
 hostServices:
   enabled: false
@@ -31,7 +31,7 @@ nodePort:
 
 # ── Image ──────────────────────────────────────────────────────────────────
 image:
-  pullPolicy: IfNotPresent        # Avoid repeat pulls in kind
+  pullPolicy: IfNotPresent        # Avoid repeat pulls in k3d
 
 # ── Observability ──────────────────────────────────────────────────────────
 prometheus:

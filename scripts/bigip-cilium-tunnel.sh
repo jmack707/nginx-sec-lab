@@ -37,7 +37,7 @@ IMPORTANT NOTES:
   • VNI key 68 — Cilium reserves keys 1-6 internally, never use them
   • Self-IP subnet must be /24, NOT overlapping any node's podCIDR
   • BIG-IP SDN license required for VXLAN tunnel creation
-  • BIG-IP internal self-IP must have L3 reachability to kind node IPs
+  • BIG-IP internal self-IP must have L3 reachability to k3d node IPs
 
 ───────────────────────────────────────────────────────────────────────────────
 STEP 1 — Create Kubernetes partition (if not exists)
@@ -55,7 +55,7 @@ tmsh create net tunnels vxlan fl-vxlan \\
 ───────────────────────────────────────────────────────────────────────────────
 STEP 3 — Create VXLAN tunnel
   key 68 = VNI (Cilium reserves 1-6)
-  local-address = BIG-IP interface IP reachable by kind nodes
+  local-address = BIG-IP interface IP reachable by k3d nodes
 ───────────────────────────────────────────────────────────────────────────────
 tmsh create net tunnels tunnel flannel_vxlan \\
   key 68 \\

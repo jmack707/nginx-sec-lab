@@ -1,7 +1,7 @@
 # nginx-sec-lab
 
-A fully repeatable Kubernetes lab environment for testing NGINX Ingress
-application security using intentionally vulnerable demo applications.
+A fully repeatable Kubernetes security lab using k3d (k3s in Docker),
+NGINX Ingress Controller, and intentionally vulnerable demo applications.
 
 ## Requirements
 
@@ -9,19 +9,19 @@ application security using intentionally vulnerable demo applications.
 - **RAM**: 8 GB minimum, 16 GB recommended
 - **CPU**: 4 cores minimum, 8+ recommended
 - **Disk**: 40 GB free (SSD recommended)
-- **Internet**: Required on first run to pull ~8 GB of container images
+- **Internet**: Required on first run (~8 GB of container images)
 
 ## Stack
 
 | Layer | Tool |
 |---|---|
-| Cluster | kind (Kubernetes in Docker) |
-| CNI | kindnet (default) · Cilium · Flannel (planned) |
-| Package management | Helmfile |
-| Ingress | F5 NGINX Ingress Controller |
-| WAF | NGINX App Protect v4 |
-| TLS | cert-manager + step-cli local CA |
+| Cluster | k3d (k3s in Docker) |
+| CNI | k3s flannel (default) · Cilium |
+| Ingress | F5 NGINX Ingress Controller (OSS) |
+| WAF | NGINX App Protect v4 (requires NGINX Plus) |
+| TLS | cert-manager + openssl local CA |
 | App overlays | Kustomize |
+| Package management | Helmfile |
 | Automation | Taskfile |
 | Observability | Prometheus + Grafana |
 | Demo apps | crAPI · Juice Shop · DVGA · vAPI |
@@ -30,85 +30,59 @@ application security using intentionally vulnerable demo applications.
 
 ## Quickstart
 
-### 1 — Install prerequisites (one-time)
-
 ```bash
-# Clone the repo
-git clone https://github.com/<your-org>/nginx-sec-lab.git
-cd nginx-sec-lab
-
-# Install all tools (Docker, kubectl, kind, helm, helmfile, task, step-cli)
+# 1. Install all tools (one-time)
 sudo bash scripts/install-ubuntu.sh
+newgrp docker    # pick up docker group without logging out
 
-# Log out and back in so the docker group takes effect, then verify
+# 2. Verify
 task check
-```
 
-### 2 — Create local CA (one-time)
-
-```bash
-task ca:init
-```
-
-### 3 — Spin up the lab
-
-```bash
-# Default: kindnet CNI, no BIG-IP
+# 3. Spin up the lab (CA created automatically on first run)
 task up
 
-# With Cilium CNI (required for BIG-IP ClusterIP mode)
-task up CNI=cilium
+# 4. Verify everything is healthy
+task health
 ```
 
-### 4 — Run lab scenarios
+## Lab Scenarios
 
 ```bash
-task health                  # verify everything is up
-
-task waf-off && task scan    # baseline — attacks succeed
-task waf-on  && task scan    # protected — attacks blocked
+task waf-off && task scan    # baseline -- attacks succeed
+task waf-on  && task scan    # protected -- compare results
 task logs:waf                # watch App Protect security events
 
-task locust                  # generate realistic crAPI traffic
-task metrics                 # open Grafana at localhost:3000
+task locust                  # realistic crAPI traffic generation
+task metrics                 # Grafana at http://localhost:3000
 task crapi:mail              # intercept password reset tokens
 ```
 
-### 5 — Tear down
+## Tear Down
 
 ```bash
-task down      # delete cluster (images cached for fast restart)
-task reset     # full destroy + rebuild
+task down     # delete cluster (images cached for fast restart)
+task reset    # full destroy + rebuild
 ```
 
 ---
 
 ## CNI Options
 
-| Command | CNI | BIG-IP CIS mode |
+| Command | CNI | Notes |
 |---|---|---|
-| `task up` | kindnet (default) | NodePort |
-| `task up CNI=cilium` | Cilium | NodePort |
-| `task up CNI=cilium MODE=bigip ...` | Cilium + VTEP | ClusterIP |
+| `task up` | k3s flannel (default) | Simplest, no extra config |
+| `CNI=cilium task up` | Cilium | Required for BIG-IP ClusterIP mode |
 
-See `cni/cilium/README.md` for the full BIG-IP ClusterIP setup procedure.
+See `cni/cilium/README.md` for the full BIG-IP ClusterIP setup.
 
 ---
 
 ## BIG-IP CIS Integration
 
 ```bash
-# 1. Configure BIG-IP connection (interactive)
-task bigip:configure
-
-# 2. Print TMSH tunnel commands (for ClusterIP mode)
-task bigip:tunnel:setup \
-  BIGIP_INTERNAL_IP=192.168.200.60 \
-  BIGIP_VTEP_SUBNET=10.1.6.0/24 \
-  BIGIP_VTEP_SELFIP=10.1.6.1
-
-# 3. Install CIS
-task bigip:cis:install CIS_MODE=nodeport   # or cluster
+task bigip:configure              # interactive: set mgmt IP + credentials
+task bigip:cis:install            # NodePort mode (default)
+CIS_MODE=cluster task bigip:cis:install  # ClusterIP mode (requires Cilium)
 ```
 
 ---
@@ -117,24 +91,21 @@ task bigip:cis:install CIS_MODE=nodeport   # or cluster
 
 ```
 nginx-sec-lab/
-├── Taskfile.yaml                    # Single entry point — run 'task --list'
-├── kind-config.yaml                 # Cluster — kindnet CNI (default)
-├── kind-config-no-cni.yaml          # Cluster — CNI disabled (Cilium/Flannel)
-├── helmfile.yaml                    # Helm releases: cert-manager, NGINX, Prometheus
+├── Taskfile.yaml                  # Single entry point
+├── helmfile.yaml                  # Helm releases
 ├── values/
-│   ├── nginx-ingress.yaml           # NGINX Ingress Helm values (App Protect enabled)
-│   ├── prometheus.yaml              # Prometheus + Grafana values
-│   ├── cis-nodeport.yaml            # BIG-IP CIS NodePort mode
-│   └── cis-cluster.yaml            # BIG-IP CIS ClusterIP mode
+│   ├── nginx-ingress.yaml         # NGINX Ingress Helm values
+│   ├── prometheus.yaml            # Prometheus + Grafana values
+│   ├── cis-nodeport.yaml          # BIG-IP CIS NodePort mode
+│   └── cis-cluster.yaml          # BIG-IP CIS ClusterIP mode
 ├── manifests/
 │   ├── namespaces.yaml
 │   └── cluster-issuer.yaml
 ├── cni/
-│   ├── cilium/                      # Cilium values (base + BIG-IP VTEP)
-│   └── flannel/                     # Flannel (planned)
-├── base/                            # Kustomize base manifests
-│   ├── crapi/                       # 7 services: identity, community, workshop,
-│   │                                #   web, mailhog, mongodb, postgres
+│   ├── cilium/                    # Cilium values + README
+│   └── flannel/                   # Flannel (planned)
+├── base/                          # Kustomize base manifests
+│   ├── crapi/                     # 7 services
 │   ├── juiceshop/
 │   ├── dvga/
 │   └── vapi/
@@ -143,25 +114,22 @@ nginx-sec-lab/
 │   ├── juiceshop/{waf-enabled,waf-disabled}/
 │   ├── dvga/{waf-enabled,waf-disabled}/
 │   └── vapi/{waf-enabled,waf-disabled}/
-├── policies/
-│   ├── ap-policy-owasp.yaml         # OWASP CRS blocking policy
-│   ├── ap-policy-dataguard.yaml     # PII scrubbing policy
-│   └── ap-logconf.yaml
-├── jobs/
-│   ├── crapi-seed-job.yaml          # Register test users before Locust
-│   ├── gotestwaf-job.yaml           # WAF bypass scanner
-│   ├── nuclei-job.yaml              # Template-based vuln scanner
-│   ├── locust-job.yaml              # Realistic API traffic generation
-│   └── results-pvc.yaml
-├── grafana/
-│   └── nginx-dashboard.yaml         # Pre-built NGINX security dashboard
+├── policies/                      # NGINX App Protect WAF policies
+├── jobs/                          # Scanner + traffic generation jobs
+├── grafana/                       # Pre-built dashboard ConfigMap
 └── scripts/
-    ├── install-ubuntu.sh            # One-shot prereq installer (Ubuntu 22.04/24.04)
-    ├── check-prereqs.sh             # Verify tools and host readiness
-    ├── health-check.sh              # Post-deploy verification
-    ├── resolve-ingress-ip.sh        # Runtime ClusterIP injection for scan jobs
-    ├── bigip-configure.sh           # Interactive BIG-IP setup
-    └── bigip-cilium-tunnel.sh       # Print TMSH tunnel commands
+    ├── install-ubuntu.sh          # One-shot prereq installer
+    ├── check-prereqs.sh           # Verify tools + host readiness
+    ├── create-cluster.sh          # k3d cluster creation
+    ├── install-cni.sh             # CNI dispatcher
+    ├── install-cilium.sh          # Cilium install for k3d
+    ├── health-check.sh            # Post-deploy verification
+    ├── pre-deploy.sh              # Resources needed before helmfile
+    ├── resolve-ingress-ip.sh      # Runtime ClusterIP for scan jobs
+    ├── run-scan.sh                # GoTestWAF / Nuclei wrapper
+    ├── run-locust.sh              # User seed + Locust start
+    ├── bigip-configure.sh         # Interactive BIG-IP setup
+    └── bigip-cilium-tunnel.sh     # Print TMSH tunnel commands
 ```
 
 ---
@@ -169,37 +137,27 @@ nginx-sec-lab/
 ## Task Reference
 
 ```bash
-task --list          # show all available tasks with descriptions
+task --list          # all tasks with descriptions
 
-# Core
-task up              # full lab up (CNI=kindnet by default)
+task up              # full lab up
 task down            # destroy cluster
 task reset           # destroy + rebuild
+task check           # verify prerequisites
+task health          # post-deploy verification
 
-# CNI
-task cni:status      # show CNI and node assignments
-task cni:hubble      # Cilium traffic visibility UI (CNI=cilium only)
-
-# WAF scenarios
-task waf-on          # enable App Protect on all apps
-task waf-off         # disable App Protect (baseline)
-
-# Scanning
+task waf-on          # enable App Protect WAF
+task waf-off         # disable WAF (baseline)
 task scan            # GoTestWAF against crAPI
-task scan:nuclei     # Nuclei template scan all apps
-task locust          # seed users + generate crAPI traffic
+task scan:nuclei     # Nuclei scan all apps
+task locust          # seed users + traffic generation
 
-# Observability
-task metrics         # Grafana at localhost:3000
-task prometheus      # Prometheus at localhost:9090
-task logs:waf        # tail App Protect security events
+task metrics         # Grafana at http://localhost:3000
+task prometheus      # Prometheus at http://localhost:9090
+task logs:waf        # tail App Protect events
 task logs:nginx      # tail NGINX access log
 
-# App utilities
-task crapi:seed      # register test users in crAPI
-task crapi:mail      # MailHog UI at localhost:8025
-task health          # run all post-deploy checks
-task check           # verify prerequisites
+task crapi:seed      # register test users
+task crapi:mail      # MailHog at http://localhost:8025
 ```
 
 ---
@@ -208,7 +166,7 @@ task check           # verify prerequisites
 
 | Module | Relevance |
 |---|---|
-| Module 3 — BIG-IP LTM | Pool members, persistence, iRules against crAPI traffic |
-| Module 5 — NGINX | Ingress Controller config, VirtualServer CRDs, App Protect policies |
-| Module 6 — Web Security / AWAF | WAF policy tuning, OWASP CRS vs crAPI/DVGA/Juice Shop |
-| Module 7 — API Security | BOLA, auth bypass, injection — full crAPI challenge set |
+| Module 3 -- BIG-IP LTM | Pool members, persistence, iRules against crAPI |
+| Module 5 -- NGINX | Ingress config, VirtualServer CRDs, App Protect |
+| Module 6 -- Web Security / AWAF | WAF policy tuning vs crAPI/DVGA/Juice Shop |
+| Module 7 -- API Security | BOLA, auth bypass, injection -- full crAPI challenge set |

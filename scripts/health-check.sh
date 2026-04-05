@@ -68,7 +68,7 @@ check_deploy() {
   fi
 }
 
-check_deploy nginx-ingress nginx-ingress
+check_deploy nginx-ingress nginx-ingress-controller
 check_deploy cert-manager  cert-manager
 check_deploy cert-manager  cert-manager-webhook
 check_deploy monitoring    kube-prometheus-stack-grafana
@@ -132,7 +132,7 @@ check_app_pods dvga
 check_app_pods vapi
 
 # ── Ingress endpoints ──────────────────────────────────────────────────────
-section "INGRESS HTTP ENDPOINTS (via localhost:8443)"
+section "INGRESS HTTP ENDPOINTS (via localhost:443)"
 
 check_endpoint() {
   local host="$1"
@@ -144,7 +144,7 @@ check_endpoint() {
     --connect-timeout 5 \
     --max-time 10 \
     -H "Host: $host" \
-    "https://localhost:8443${path}" 2>/dev/null || echo "ERR")
+    "https://localhost:443${path}" 2>/dev/null || echo "ERR")
 
   if [[ "$status" == "$expected" ]]; then
     ok "$host$path  →  HTTP $status"
