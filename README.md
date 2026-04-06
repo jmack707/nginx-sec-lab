@@ -7,9 +7,10 @@ NGINX Ingress Controller, and intentionally vulnerable demo applications.
 
 - **OS**: Ubuntu 22.04 LTS or 24.04 LTS (amd64 or arm64)
 - **RAM**: 8 GB minimum, 16 GB recommended
-- **CPU**: 4 cores minimum, 8+ recommended
-- **Disk**: 40 GB free (SSD recommended)
-- **Internet**: Required on first run (~8 GB of container images)
+- **CPU**: 4 cores minimum
+- **Disk**: 40 GB minimum, 60 GB recommended
+  - If pods evict with `disk-pressure` taint: resize VM disk in Proxmox, then `sudo growpart /dev/sda 2 && sudo resize2fs /dev/sda2`
+- **Network**: External clients must be able to reach the lab host IP on ports 80/443
 
 ## Stack
 
@@ -17,63 +18,106 @@ NGINX Ingress Controller, and intentionally vulnerable demo applications.
 |---|---|
 | Cluster | k3d (k3s in Docker) |
 | CNI | k3s flannel (default) · Cilium |
-| Ingress | F5 NGINX Ingress Controller (OSS) |
-| WAF | NGINX App Protect v4 (requires NGINX Plus) |
+| Ingress | F5 NGINX Ingress Controller (OSS or Plus) |
+| WAF | NGINX App Protect v4 (NGINX Plus only) |
 | TLS | cert-manager + openssl local CA |
 | App overlays | Kustomize |
 | Package management | Helmfile |
 | Automation | Taskfile |
 | Observability | Prometheus + Grafana |
-| Demo apps | crAPI · Juice Shop · DVGA · vAPI |
+| Demo apps | crAPI · Juice Shop · DVGA · VAmPI |
+
+---
+
+## Setup (one-time per VM)
+
+### 1 — Install prerequisites
+
+```bash
+sudo bash scripts/install-ubuntu.sh
+newgrp docker
+task check
+```
+
+### 2 — Configure the lab
+
+Edit `lab.env` before doing anything else:
+
+```bash
+nano lab.env
+```
+
+Key settings:
+```bash
+LAB_HOST_IP=172.16.1.136     # IP of this Ubuntu machine
+LAB_DOMAIN=lab.local          # domain for all app hostnames
+DOCKERHUB_USER=yourusername   # Docker Hub account (avoids rate limits)
+NGINX_JWT=                    # NGINX Plus JWT (leave blank for OSS)
+NGINX_MODE=oss                # oss or plus
+```
+
+### 3 — Set up local image registry
+
+```bash
+task registry:setup    # creates local k3d registry (survives task reset)
+task registry:cache    # pulls all images and stores them locally
+```
+
+`registry:cache` reads credentials from `lab.env` and logs in automatically.
+After this, `task reset` runs fully offline.
 
 ---
 
 ## Quickstart
 
 ```bash
-# 1. Install all tools (one-time)
-sudo bash scripts/install-ubuntu.sh
-newgrp docker    # pick up docker group without logging out
-
-# 2. Verify
-task check
-
-# 3. Login to container registries (one-time)
-docker login                                        # Docker Hub (all demo apps)
-
-# NGINX Plus / App Protect only (OSS lab skips this):
-# docker login private-registry.nginx.com \
-#   --username=<JWT_TOKEN> \
-#   --password=none
-# Get token: https://my.f5.com > My Products > NGINX > Manage Subscriptions
-
-# 4. Set up local image cache (one-time -- survives task reset)
-task registry:setup
-task registry:cache
-
-# 5. Spin up the lab (CA created automatically on first run)
-task up
-
-# 4. Verify everything is healthy
-task health
+task up        # full lab up (reads lab.env for IP and domain)
+task health    # verify everything is running
+task test      # curl smoke tests against all endpoints
 ```
+
+---
+
+## Lab URLs
+
+After `task up`, add to client `/etc/hosts`:
+
+```
+<LAB_HOST_IP>  crapi.<LAB_DOMAIN> juiceshop.<LAB_DOMAIN> dvga.<LAB_DOMAIN> vampi.<LAB_DOMAIN>
+```
+
+| App | URL | Notes |
+|---|---|---|
+| crAPI | `https://crapi.<LAB_DOMAIN>` | API security challenges |
+| Juice Shop | `https://juiceshop.<LAB_DOMAIN>` | Web app vulnerabilities |
+| DVGA | `https://dvga.<LAB_DOMAIN>` | GraphQL vulnerabilities |
+| VAmPI | `https://vampi.<LAB_DOMAIN>` | OWASP API Top 10 (SQLi, BOLA, mass assignment, JWT bypass) |
+| Grafana | `http://<LAB_HOST_IP>:3000` | Metrics (run: `task metrics`) |
+| MailHog | `http://<LAB_HOST_IP>:8025` | crAPI email capture (run: `task crapi:mail`) |
+
+TLS certificates are signed by the local CA (`root_ca.crt` in repo root).
+Install on Windows: `certutil -addstore -f "ROOT" root_ca.crt`
+Install on Mac: `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain root_ca.crt`
+
+---
 
 ## Lab Scenarios
 
 ```bash
 task waf-off && task scan    # baseline -- attacks succeed
-task waf-on  && task scan    # protected -- compare results
+task waf-on  && task scan    # protected -- attacks blocked
 task logs:waf                # watch App Protect security events
-
 task locust                  # realistic crAPI traffic generation
-task metrics                 # Grafana at http://localhost:3000
-task crapi:mail              # intercept password reset tokens
+task metrics                 # Grafana at http://<LAB_HOST_IP>:3000
+task crapi:mail              # intercept crAPI password reset tokens
 ```
+
+---
 
 ## Tear Down
 
 ```bash
-task down     # delete cluster (images cached for fast restart)
+task down     # delete cluster (registry and images preserved)
 task reset    # full destroy + rebuild
 ```
 
@@ -83,10 +127,8 @@ task reset    # full destroy + rebuild
 
 | Command | CNI | Notes |
 |---|---|---|
-| `task up` | k3s flannel (default) | Simplest, no extra config |
+| `task up` | k3s flannel (default) | Simplest setup |
 | `CNI=cilium task up` | Cilium | Required for BIG-IP ClusterIP mode |
-
-See `cni/cilium/README.md` for the full BIG-IP ClusterIP setup.
 
 ---
 
@@ -96,53 +138,6 @@ See `cni/cilium/README.md` for the full BIG-IP ClusterIP setup.
 task bigip:configure              # interactive: set mgmt IP + credentials
 task bigip:cis:install            # NodePort mode (default)
 CIS_MODE=cluster task bigip:cis:install  # ClusterIP mode (requires Cilium)
-```
-
----
-
-## Repo Layout
-
-```
-nginx-sec-lab/
-├── Taskfile.yaml                  # Single entry point
-├── helmfile.yaml                  # Helm releases
-├── values/
-│   ├── nginx-ingress.yaml         # NGINX Ingress Helm values
-│   ├── prometheus.yaml            # Prometheus + Grafana values
-│   ├── cis-nodeport.yaml          # BIG-IP CIS NodePort mode
-│   └── cis-cluster.yaml          # BIG-IP CIS ClusterIP mode
-├── manifests/
-│   ├── namespaces.yaml
-│   └── cluster-issuer.yaml
-├── cni/
-│   ├── cilium/                    # Cilium values + README
-│   └── flannel/                   # Flannel (planned)
-├── base/                          # Kustomize base manifests
-│   ├── crapi/                     # 7 services
-│   ├── juiceshop/
-│   ├── dvga/
-│   └── vapi/
-├── overlays/
-│   ├── crapi/{waf-enabled,waf-disabled}/
-│   ├── juiceshop/{waf-enabled,waf-disabled}/
-│   ├── dvga/{waf-enabled,waf-disabled}/
-│   └── vapi/{waf-enabled,waf-disabled}/
-├── policies/                      # NGINX App Protect WAF policies
-├── jobs/                          # Scanner + traffic generation jobs
-├── grafana/                       # Pre-built dashboard ConfigMap
-└── scripts/
-    ├── install-ubuntu.sh          # One-shot prereq installer
-    ├── check-prereqs.sh           # Verify tools + host readiness
-    ├── create-cluster.sh          # k3d cluster creation
-    ├── install-cni.sh             # CNI dispatcher
-    ├── install-cilium.sh          # Cilium install for k3d
-    ├── health-check.sh            # Post-deploy verification
-    ├── pre-deploy.sh              # Resources needed before helmfile
-    ├── resolve-ingress-ip.sh      # Runtime ClusterIP for scan jobs
-    ├── run-scan.sh                # GoTestWAF / Nuclei wrapper
-    ├── run-locust.sh              # User seed + Locust start
-    ├── bigip-configure.sh         # Interactive BIG-IP setup
-    └── bigip-cilium-tunnel.sh     # Print TMSH tunnel commands
 ```
 
 ---
@@ -157,6 +152,11 @@ task down            # destroy cluster
 task reset           # destroy + rebuild
 task check           # verify prerequisites
 task health          # post-deploy verification
+task test            # curl smoke tests
+
+task registry:setup  # create local image registry (one-time)
+task registry:cache  # pull and cache all images
+task registry:ls     # list cached images
 
 task waf-on          # enable App Protect WAF
 task waf-off         # disable WAF (baseline)
@@ -164,13 +164,13 @@ task scan            # GoTestWAF against crAPI
 task scan:nuclei     # Nuclei scan all apps
 task locust          # seed users + traffic generation
 
-task metrics         # Grafana at http://localhost:3000
-task prometheus      # Prometheus at http://localhost:9090
+task metrics         # Grafana dashboard
+task prometheus      # Prometheus UI
 task logs:waf        # tail App Protect events
 task logs:nginx      # tail NGINX access log
 
 task crapi:seed      # register test users
-task crapi:mail      # MailHog at http://localhost:8025
+task crapi:mail      # MailHog email capture
 ```
 
 ---

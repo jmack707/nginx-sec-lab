@@ -22,9 +22,50 @@ else
   echo "  No stale rules found"
 fi
 
-# Load lab config
+# Load lab config and secrets safely
+# Handles special characters in values (JWT tokens, passwords etc.)
+load_lab_env() {
+  local env_file="${1}"
+  local secrets_file="$(dirname "${env_file}")/lab.secrets"
+
+  if [ ! -f "${env_file}" ]; then
+    echo "ERROR: ${env_file} not found"; exit 1
+  fi
+
+  # Parse key=value, skip comments and blanks
+  _parse_env() {
+    local file="${1}"
+    while IFS= read -r line || [ -n "$line" ]; do
+      [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+      [[ -z "${line// }" ]] && continue
+      local key="${line%%=*}"
+      local value="${line#*=}"
+      value="${value%%#*}"
+      value="${value#"${value%%[![:space:]]*}"}"
+      value="${value%"${value##*[![:space:]]}"}"
+      [[ "${value}" =~ ^\'(.*)\'$ ]] && value="${BASH_REMATCH[1]}"
+      [[ "${value}" =~ ^\"(.*)\"$ ]] && value="${BASH_REMATCH[1]}"
+      export "${key}=${value}" 2>/dev/null || true
+    done < "${file}"
+  }
+
+  _parse_env "${env_file}"
+
+  # Load secrets if present
+  if [ -f "${secrets_file}" ]; then
+    _parse_env "${secrets_file}"
+  fi
+
+  # Resolve hostnames from LAB_DOMAIN
+  export CRAPI_HOST="crapi.${LAB_DOMAIN}"
+  export JUICESHOP_HOST="juiceshop.${LAB_DOMAIN}"
+  export DVGA_HOST="dvga.${LAB_DOMAIN}"
+  export VAMPI_HOST="vampi.${LAB_DOMAIN}"
+}
+
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lab.env"
+load_lab_env "${SCRIPT_DIR}/../lab.env"
 
 REGISTRY_NAME="k3d-registry.localhost"
 REGISTRY_PORT="5000"
@@ -95,4 +136,4 @@ echo ""
 echo "External access:"
 echo "  http://${LAB_HOST_IP}   https://${LAB_HOST_IP}"
 echo "  Add to client /etc/hosts:"
-echo "  ${LAB_HOST_IP}  ${CRAPI_HOST} ${JUICESHOP_HOST} ${DVGA_HOST} ${VAPI_HOST}"
+echo "  ${LAB_HOST_IP}  ${CRAPI_HOST} ${JUICESHOP_HOST} ${DVGA_HOST} ${VAMPI_HOST}"

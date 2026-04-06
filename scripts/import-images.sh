@@ -29,9 +29,8 @@ IMPORTABLE=(
   "mailhog/mailhog:latest"
   "bkimminich/juice-shop:latest"
   "dolevf/dvga:latest"
-  "roottusk/vapi:latest"
+  "erev0s/vampi:latest"
   "mariadb:10.6"
-  "curlimages/curl:latest"
 )
 
 echo ""

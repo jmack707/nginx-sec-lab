@@ -2,27 +2,26 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: dvga
-  namespace: dvga
+  name: vampi
+  namespace: vampi
   annotations:
     nginx.org/proxy-connect-timeout: "30s"
-    nginx.org/proxy-read-timeout: "60s"
-    # GraphQL queries can be large — allow generous body size
-    nginx.org/client-max-body-size: "2m"
+    nginx.org/proxy-read-timeout: "30s"
+    nginx.org/client-max-body-size: "1m"
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - dvga.1broken.net
-      secretName: dvga-tls
+        - vampi.1broken.net
+      secretName: vampi-tls
   rules:
-    - host: dvga.1broken.net
+    - host: vampi.1broken.net
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: dvga
+                name: vampi
                 port:
-                  number: 5013
+                  number: 80

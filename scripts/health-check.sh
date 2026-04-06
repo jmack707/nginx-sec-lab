@@ -5,7 +5,50 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lab.env"
+
+# Load lab config and secrets safely
+# Handles special characters in values (JWT tokens, passwords etc.)
+load_lab_env() {
+  local env_file="${1}"
+  local secrets_file="$(dirname "${env_file}")/lab.secrets"
+
+  if [ ! -f "${env_file}" ]; then
+    echo "ERROR: ${env_file} not found"; exit 1
+  fi
+
+  # Parse key=value, skip comments and blanks
+  _parse_env() {
+    local file="${1}"
+    while IFS= read -r line || [ -n "$line" ]; do
+      [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+      [[ -z "${line// }" ]] && continue
+      local key="${line%%=*}"
+      local value="${line#*=}"
+      value="${value%%#*}"
+      value="${value#"${value%%[![:space:]]*}"}"
+      value="${value%"${value##*[![:space:]]}"}"
+      [[ "${value}" =~ ^\'(.*)\'$ ]] && value="${BASH_REMATCH[1]}"
+      [[ "${value}" =~ ^\"(.*)\"$ ]] && value="${BASH_REMATCH[1]}"
+      export "${key}=${value}" 2>/dev/null || true
+    done < "${file}"
+  }
+
+  _parse_env "${env_file}"
+
+  # Load secrets if present
+  if [ -f "${secrets_file}" ]; then
+    _parse_env "${secrets_file}"
+  fi
+
+  # Resolve hostnames from LAB_DOMAIN
+  export CRAPI_HOST="crapi.${LAB_DOMAIN}"
+  export JUICESHOP_HOST="juiceshop.${LAB_DOMAIN}"
+  export DVGA_HOST="dvga.${LAB_DOMAIN}"
+  export VAMPI_HOST="vampi.${LAB_DOMAIN}"
+}
+
+
+load_lab_env "${SCRIPT_DIR}/../lab.env"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -45,7 +88,7 @@ fi
 
 # ── Namespaces ─────────────────────────────────────────────────────────────
 section "NAMESPACES"
-for ns in nginx-ingress cert-manager monitoring crapi juice-shop dvga vapi; do
+for ns in nginx-ingress cert-manager monitoring crapi juice-shop dvga vampi; do
   if kubectl get namespace "$ns" &>/dev/null; then
     ok "namespace/$ns exists"
   else
@@ -82,9 +125,9 @@ section "TLS CERTIFICATES"
 CRAPI_NS="crapi"; CRAPI_CERT="crapi-tls"
 JS_NS="juice-shop"; JS_CERT="juiceshop-tls"
 DVGA_NS="dvga"; DVGA_CERT="dvga-tls"
-VAPI_NS="vapi"; VAPI_CERT="vapi-tls"
+VAMPI_NS="vampi"; VAMPI_CERT="vampi-tls"
 
-for ns_cert in "${CRAPI_NS}:${CRAPI_CERT}" "${JS_NS}:${JS_CERT}" "${DVGA_NS}:${DVGA_CERT}" "${VAPI_NS}:${VAPI_CERT}"; do
+for ns_cert in "${CRAPI_NS}:${CRAPI_CERT}" "${JS_NS}:${JS_CERT}" "${DVGA_NS}:${DVGA_CERT}" "${VAMPI_NS}:${VAMPI_CERT}"; do
   ns="${ns_cert%%:*}"; cert="${ns_cert##*:}"
   ready=$(kubectl get certificate "$cert" -n "$ns" \
     -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
@@ -136,7 +179,7 @@ check_app_pods() {
 check_app_pods crapi
 check_app_pods juice-shop
 check_app_pods dvga
-check_app_pods vapi
+check_app_pods vampi
 
 # ── Ingress HTTP endpoints ─────────────────────────────────────────────────
 section "INGRESS HTTP ENDPOINTS (via ${LAB_HOST_IP}:443)"
@@ -162,11 +205,11 @@ check_endpoint() {
 check_endpoint "${CRAPI_HOST}"     "/"  "200"
 check_endpoint "${JUICESHOP_HOST}" "/"  "200"
 check_endpoint "${DVGA_HOST}"      "/"  "200"
-check_endpoint "${VAPI_HOST}"      "/"  "200"
+check_endpoint "${VAMPI_HOST}"      "/"  "200"
 
 # ── WAF status ─────────────────────────────────────────────────────────────
 section "WAF STATUS"
-for ns_ing in "crapi:crapi" "juice-shop:juice-shop" "dvga:dvga" "vapi:vapi"; do
+for ns_ing in "crapi:crapi" "juice-shop:juice-shop" "dvga:dvga" "vampi:vampi"; do
   ns="${ns_ing%%:*}"; ing="${ns_ing##*:}"
   waf=$(kubectl get ingress "$ing" -n "$ns" \
     -o jsonpath='{.metadata.annotations.nginx\.org/app-protect-enable}' 2>/dev/null || echo "")
@@ -180,7 +223,7 @@ done
 # ── /etc/hosts hint ────────────────────────────────────────────────────────
 section "CLIENT ACCESS"
 echo -e "  Add to client /etc/hosts:"
-echo -e "  ${CYAN}${LAB_HOST_IP}  ${CRAPI_HOST} ${JUICESHOP_HOST} ${DVGA_HOST} ${VAPI_HOST}${NC}"
+echo -e "  ${CYAN}${LAB_HOST_IP}  ${CRAPI_HOST} ${JUICESHOP_HOST} ${DVGA_HOST} ${VAMPI_HOST}${NC}"
 
 # ── Summary ────────────────────────────────────────────────────────────────
 echo ""

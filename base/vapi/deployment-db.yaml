@@ -14,49 +14,47 @@ spec:
       labels:
         app: vapi-db
     spec:
-      containers:
-        - name: mysql
-          # MariaDB instead of MySQL 5.7 -- MySQL 5.7 requires x86-64-v2 CPU
-          # which is not available on all lab VMs. MariaDB 10.6 is compatible
-          # with vAPI and runs on all CPU types.
-          image: mariadb:10.6
-          ports:
-            - containerPort: 3306
+      initContainers:
+        - name: import-schema
+          image: mysql:8.0
+          command:
+            - sh
+            - -c
+            - |
+              until mysqladmin ping -h 127.0.0.1 -u root -p"${MYSQL_ROOT_PASSWORD}" --silent 2>/dev/null; do
+                echo "Waiting for MySQL..."; sleep 2
+              done
+              mysql -h 127.0.0.1 -u root -p"${MYSQL_ROOT_PASSWORD}" vapi < /docker-entrypoint-initdb.d/vapi.sql 2>&1 || echo "Schema import done"
           env:
-            - name: MYSQL_DATABASE
-              value: vapi
-            - name: MYSQL_USER
-              value: vapi
-            - name: MYSQL_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: vapi-db-secret
-                  key: password
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: vapi-db-secret
                   key: root-password
+      containers:
+        - name: vapi-db
+          image: mysql:8.0
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: vapi-db-secret
+                  key: root-password
+            - name: MYSQL_DATABASE
+              value: vapi
+            - name: MYSQL_USER
+              value: vapi_user
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: vapi-db-secret
+                  key: password
           resources:
             requests:
-              memory: "512Mi"
+              memory: "256Mi"
               cpu: "100m"
             limits:
-              memory: "1Gi"
+              memory: "512Mi"
               cpu: "500m"
-          volumeMounts:
-            - name: mysql-data
-              mountPath: /var/lib/mysql
-          readinessProbe:
-            exec:
-              command:
-                - mysqladmin
-                - ping
-                - -h
-                - localhost
-            initialDelaySeconds: 20
-            periodSeconds: 5
-            failureThreshold: 12
-      volumes:
-        - name: mysql-data
-          emptyDir: {}

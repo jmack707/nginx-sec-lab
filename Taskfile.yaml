@@ -193,7 +193,7 @@ tasks:
   apps:down:
     desc: "Remove all demo application namespaces"
     cmds:
-      - kubectl delete namespace crapi juice-shop dvga vapi --ignore-not-found=true
+      - kubectl delete namespace crapi juice-shop dvga vampi --ignore-not-found=true
       - echo "All demo apps removed"
 
   # ---------------------------------------------------------------------------
@@ -206,7 +206,7 @@ tasks:
       - kubectl apply -k overlays/crapi/waf-enabled
       - kubectl apply -k overlays/juiceshop/waf-enabled
       - kubectl apply -k overlays/dvga/waf-enabled
-      - kubectl apply -k overlays/vapi/waf-enabled
+      - kubectl apply -k overlays/vampi/waf-enabled
       - echo "WAF enabled"
 
   waf-off:
@@ -215,7 +215,7 @@ tasks:
       - kubectl apply -k overlays/crapi/waf-disabled
       - kubectl apply -k overlays/juiceshop/waf-disabled
       - kubectl apply -k overlays/dvga/waf-disabled
-      - kubectl apply -k overlays/vapi/waf-disabled
+      - kubectl apply -k overlays/vampi/waf-disabled
       - echo "WAF disabled"
 
   # ---------------------------------------------------------------------------

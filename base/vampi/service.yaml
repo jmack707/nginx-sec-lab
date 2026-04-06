@@ -1,0 +1,12 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vampi
+  namespace: vampi
+spec:
+  selector:
+    app: vampi
+  ports:
+    - port: 80
+      targetPort: 5000

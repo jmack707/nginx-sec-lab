@@ -10,4 +10,4 @@ spec:
     name: local-ca-issuer
     kind: ClusterIssuer
   dnsNames:
-    - vapi.lab.local
+    - vapi.1broken.net

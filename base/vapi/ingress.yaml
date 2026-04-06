@@ -12,13 +12,13 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - vapi.lab.local
+        - vapi.1broken.net
       secretName: vapi-tls
   rules:
-    - host: vapi.lab.local
+    - host: vapi.1broken.net
       http:
         paths:
-          - path: /
+          - path: /vapi
             pathType: Prefix
             backend:
               service:

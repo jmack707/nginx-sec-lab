@@ -1,42 +1,121 @@
 #!/usr/bin/env bash
 # scripts/pull-and-cache.sh
-# Pulls all lab images and stores them in the local registry under the exact
-# path that containerd expects when using the registry as a docker.io mirror.
+# Pulls all lab images and stores them in the local registry.
+# Registry credentials are configured in lab.env.
 #
-# Official Docker Hub images (no org prefix) must be stored under library/:
-#   busybox:1.35   -> k3d-registry.localhost:5000/library/busybox:1.35
-#   mongo:4.4      -> k3d-registry.localhost:5000/library/mongo:4.4
-#
-# Org images keep their full path:
-#   nginx/nginx-ingress:3.4.3 -> k3d-registry.localhost:5000/nginx/nginx-ingress:3.4.3
-#
-# quay.io images include the registry prefix:
-#   quay.io/jetstack/cert-manager-controller:v1.14.7
-#     -> k3d-registry.localhost:5000/quay.io/jetstack/cert-manager-controller:v1.14.7
+# DOCKERHUB_USER  -- set in lab.env to avoid Docker Hub rate limits
+# NGINX_JWT       -- set in lab.env only if using NGINX Plus / App Protect
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load lab config and secrets safely
+# Handles special characters in values (JWT tokens, passwords etc.)
+load_lab_env() {
+  local env_file="${1}"
+  local secrets_file="$(dirname "${env_file}")/lab.secrets"
+
+  if [ ! -f "${env_file}" ]; then
+    echo "ERROR: ${env_file} not found"; exit 1
+  fi
+
+  # Parse key=value, skip comments and blanks
+  _parse_env() {
+    local file="${1}"
+    while IFS= read -r line || [ -n "$line" ]; do
+      [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+      [[ -z "${line// }" ]] && continue
+      local key="${line%%=*}"
+      local value="${line#*=}"
+      value="${value%%#*}"
+      value="${value#"${value%%[![:space:]]*}"}"
+      value="${value%"${value##*[![:space:]]}"}"
+      [[ "${value}" =~ ^\'(.*)\'$ ]] && value="${BASH_REMATCH[1]}"
+      [[ "${value}" =~ ^\"(.*)\"$ ]] && value="${BASH_REMATCH[1]}"
+      export "${key}=${value}" 2>/dev/null || true
+    done < "${file}"
+  }
+
+  _parse_env "${env_file}"
+
+  # Load secrets if present
+  if [ -f "${secrets_file}" ]; then
+    _parse_env "${secrets_file}"
+  fi
+
+  # Resolve hostnames from LAB_DOMAIN
+  export CRAPI_HOST="crapi.${LAB_DOMAIN}"
+  export JUICESHOP_HOST="juiceshop.${LAB_DOMAIN}"
+  export DVGA_HOST="dvga.${LAB_DOMAIN}"
+  export VAMPI_HOST="vampi.${LAB_DOMAIN}"
+}
+
+
+load_lab_env "${SCRIPT_DIR}/../lab.env"
 
 REGISTRY="k3d-registry.localhost:5000"
 
+RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
-RED='\033[0;31m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 ok()   { echo -e "  ${GREEN}✓${NC}  $*"; }
 info() { echo -e "  ${CYAN}→${NC}  $*"; }
 fail() { echo -e "  ${RED}✗${NC}  $*"; }
+warn() { echo -e "  ${YELLOW}!${NC}  $*"; }
 
+# ── Registry login ────────────────────────────────────────────────────────────
+login_registries() {
+  # Docker Hub
+  if [ -n "${DOCKERHUB_USER:-}" ]; then
+    if ! cat ~/.docker/config.json 2>/dev/null | grep -q "index.docker.io"; then
+      info "Logging in to Docker Hub as ${DOCKERHUB_USER}..."
+      if [ -n "${DOCKERHUB_PASS:-}" ]; then
+        # Password stored in lab.env
+        echo "${DOCKERHUB_PASS}" | docker login --username "${DOCKERHUB_USER}" --password-stdin
+      else
+        # Prompt interactively (password not stored)
+        docker login --username "${DOCKERHUB_USER}"
+      fi
+      ok "Docker Hub: logged in"
+    else
+      ok "Docker Hub: already logged in"
+    fi
+  else
+    if ! cat ~/.docker/config.json 2>/dev/null | grep -q "index.docker.io"; then
+      warn "DOCKERHUB_USER not set in lab.env -- anonymous pulls may be rate limited"
+      warn "Set DOCKERHUB_USER=yourusername in lab.env"
+    else
+      ok "Docker Hub: already logged in"
+    fi
+  fi
+
+  # NGINX private registry (Plus/App Protect only)
+  if [ "${NGINX_MODE:-oss}" = "plus" ]; then
+    if [ -z "${NGINX_JWT:-}" ]; then
+      echo -e "${RED}ERROR: NGINX_MODE=plus but NGINX_JWT not set in lab.env${NC}"
+      echo "  Get token: https://my.f5.com > My Products > NGINX > Manage Subscriptions"
+      echo "  Set NGINX_JWT=<token> in lab.env"
+      exit 1
+    fi
+    if ! cat ~/.docker/config.json 2>/dev/null | grep -q "private-registry.nginx.com"; then
+      info "Logging in to NGINX private registry..."
+      docker login private-registry.nginx.com \
+        --username="${NGINX_JWT}" \
+        --password=none
+      ok "NGINX private registry: logged in"
+    else
+      ok "NGINX private registry: already logged in"
+    fi
+  fi
+}
+
+# ── Image caching ─────────────────────────────────────────────────────────────
 cache() {
-  # cache <full-image-ref> <registry-path>
-  # full-image-ref: what to pull  (e.g. busybox:1.35)
-  # registry-path:  path in local registry (e.g. library/busybox:1.35)
-  local src="$1"
-  local dst="$2"
-  local local_tag="${REGISTRY}/${dst}"
-
-  # Extract repo and tag from dst for API check
-  local repo="${dst%%:*}"
-  local tag="${dst##*:}"
+  local src="$1" dst="$2"
+  local repo="${dst%%:*}" tag="${dst##*:}"
   [[ "$dst" != *":"* ]] && tag="latest"
 
   if curl -sf "http://${REGISTRY}/v2/${repo}/tags/list" 2>/dev/null \
@@ -47,18 +126,28 @@ cache() {
 
   info "Pulling ${src}..."
   if docker pull "${src}" --quiet 2>/dev/null; then
-    docker tag "${src}" "${local_tag}"
-    docker push "${local_tag}" --quiet 2>/dev/null \
-      && ok "Cached: ${src} -> ${dst}" \
+    docker tag "${src}" "${REGISTRY}/${dst}"
+    docker push "${REGISTRY}/${dst}" --quiet 2>/dev/null \
+      && ok "Cached: ${src}" \
       || fail "Push failed: ${src}"
   else
     fail "Pull failed: ${src}"
   fi
 }
 
+# ── Determine NGINX image source ──────────────────────────────────────────────
+if [ "${NGINX_MODE:-oss}" = "plus" ]; then
+  NGINX_IMAGE="private-registry.nginx.com/nginx-ic/nginx-plus-ingress:3.4.3"
+  NGINX_DST="nginx/nginx-ingress:3.4.3"
+else
+  NGINX_IMAGE="nginx/nginx-ingress:3.4.3"
+  NGINX_DST="nginx/nginx-ingress:3.4.3"
+fi
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${CYAN}  nginx-sec-lab -- Image Cache${NC}"
+echo -e "${CYAN}  nginx-sec-lab -- Image Cache (mode: ${NGINX_MODE:-oss})${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
@@ -67,52 +156,21 @@ if ! docker inspect k3d-registry.localhost &>/dev/null; then
   exit 1
 fi
 
-# Check Docker Hub auth
-if ! cat ~/.docker/config.json 2>/dev/null | grep -q "index.docker.io"; then
-  echo -e "${YELLOW}WARNING: Not logged in to Docker Hub.${NC}"
-  echo -e "         Run: ${CYAN}docker login${NC}  then retry"
-  echo -e "         Most images require an authenticated pull (rate limit)"
-  echo ""
-fi
+login_registries
 
-# Check NGINX registry auth (only needed for NGINX Plus)
-# For OSS nginx/nginx-ingress, Docker Hub login is sufficient
-# NGINX private registry auth (required for NGINX Plus / App Protect images)
-# JWT token is used as the USERNAME, password is literally "none"
-# Get token: https://my.f5.com > My Products > NGINX > Manage Subscriptions
-#
-# docker login private-registry.nginx.com \
-#   --username=<JWT_TOKEN> \
-#   --password=none
-NGINX_PLUS=false
-if grep -q "private-registry.nginx.com" values/nginx-ingress.yaml 2>/dev/null; then
-  NGINX_PLUS=true
-  if ! cat ~/.docker/config.json 2>/dev/null | grep -q "private-registry.nginx.com"; then
-    echo -e "${YELLOW}WARNING: NGINX Plus detected but not logged in to private-registry.nginx.com${NC}"
-    echo -e "         Run:"
-    echo -e "         ${CYAN}docker login private-registry.nginx.com \${NC}"
-    echo -e "         ${CYAN}  --username=<JWT_TOKEN> \${NC}"
-    echo -e "         ${CYAN}  --password=none${NC}"
-    echo -e "         Get token: https://my.f5.com > My Products > NGINX > Manage Subscriptions"
-    echo ""
-  fi
-fi
-
+echo ""
 echo "INFRASTRUCTURE"
-# quay.io images - include registry prefix in path
 cache "quay.io/jetstack/cert-manager-controller:v1.14.7"  "quay.io/jetstack/cert-manager-controller:v1.14.7"
 cache "quay.io/jetstack/cert-manager-cainjector:v1.14.7"  "quay.io/jetstack/cert-manager-cainjector:v1.14.7"
 cache "quay.io/jetstack/cert-manager-webhook:v1.14.7"     "quay.io/jetstack/cert-manager-webhook:v1.14.7"
+cache "${NGINX_IMAGE}"                                     "${NGINX_DST}"
+cache "grafana/grafana:10.4.0"                            "grafana/grafana:10.4.0"
 cache "quay.io/kiwigrid/k8s-sidecar:1.26.1"               "quay.io/kiwigrid/k8s-sidecar:1.26.1"
 cache "quay.io/prometheus/prometheus:v2.50.1"              "quay.io/prometheus/prometheus:v2.50.1"
-# docker.io org images - keep org/image path
-cache "nginx/nginx-ingress:3.4.3"   "nginx/nginx-ingress:3.4.3"
-cache "grafana/grafana:10.4.0"      "grafana/grafana:10.4.0"
-cache "prom/node-exporter:latest"   "prom/node-exporter:latest"
+cache "prom/node-exporter:latest"                          "prom/node-exporter:latest"
 
 echo ""
 echo "DEMO APPS"
-# docker.io org images
 cache "crapi/crapi-identity:latest"   "crapi/crapi-identity:latest"
 cache "crapi/crapi-community:latest"  "crapi/crapi-community:latest"
 cache "crapi/crapi-workshop:latest"   "crapi/crapi-workshop:latest"
@@ -120,16 +178,16 @@ cache "crapi/crapi-web:latest"        "crapi/crapi-web:latest"
 cache "mailhog/mailhog:latest"        "mailhog/mailhog:latest"
 cache "bkimminich/juice-shop:latest"  "bkimminich/juice-shop:latest"
 cache "dolevf/dvga:latest"            "dolevf/dvga:latest"
-cache "roottusk/vapi:latest"          "roottusk/vapi:latest"
+cache "erev0s/vampi:latest"           "erev0s/vampi:latest"
 cache "curlimages/curl:latest"        "curlimages/curl:latest"
-# docker.io official (library) images - MUST use library/ prefix
-cache "busybox:1.35"       "library/busybox:1.35"
-cache "mongo:4.4"          "library/mongo:4.4"
-cache "postgres:14-alpine" "library/postgres:14-alpine"
-cache "mariadb:10.6"       "library/mariadb:10.6"
+cache "busybox:1.35"                  "library/busybox:1.35"
+cache "mongo:4.4"                     "library/mongo:4.4"
+cache "postgres:14-alpine"            "library/postgres:14-alpine"
+cache "mariadb:10.6"                  "library/mariadb:10.6"
 
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}Cache complete. Run 'task down && task up' to use cached images.${NC}"
+echo -e "${GREEN}Cache complete. All images stored in: ${REGISTRY}${NC}"
+echo -e "Run ${CYAN}task reset${NC} to rebuild with cached images."
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""

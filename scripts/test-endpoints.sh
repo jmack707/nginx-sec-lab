@@ -5,7 +5,50 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lab.env"
+
+# Load lab config and secrets safely
+# Handles special characters in values (JWT tokens, passwords etc.)
+load_lab_env() {
+  local env_file="${1}"
+  local secrets_file="$(dirname "${env_file}")/lab.secrets"
+
+  if [ ! -f "${env_file}" ]; then
+    echo "ERROR: ${env_file} not found"; exit 1
+  fi
+
+  # Parse key=value, skip comments and blanks
+  _parse_env() {
+    local file="${1}"
+    while IFS= read -r line || [ -n "$line" ]; do
+      [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+      [[ -z "${line// }" ]] && continue
+      local key="${line%%=*}"
+      local value="${line#*=}"
+      value="${value%%#*}"
+      value="${value#"${value%%[![:space:]]*}"}"
+      value="${value%"${value##*[![:space:]]}"}"
+      [[ "${value}" =~ ^\'(.*)\'$ ]] && value="${BASH_REMATCH[1]}"
+      [[ "${value}" =~ ^\"(.*)\"$ ]] && value="${BASH_REMATCH[1]}"
+      export "${key}=${value}" 2>/dev/null || true
+    done < "${file}"
+  }
+
+  _parse_env "${env_file}"
+
+  # Load secrets if present
+  if [ -f "${secrets_file}" ]; then
+    _parse_env "${secrets_file}"
+  fi
+
+  # Resolve hostnames from LAB_DOMAIN
+  export CRAPI_HOST="crapi.${LAB_DOMAIN}"
+  export JUICESHOP_HOST="juiceshop.${LAB_DOMAIN}"
+  export DVGA_HOST="dvga.${LAB_DOMAIN}"
+  export VAMPI_HOST="vampi.${LAB_DOMAIN}"
+}
+
+
+load_lab_env "${SCRIPT_DIR}/../lab.env"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -39,7 +82,7 @@ echo "AVAILABILITY"
 check "crAPI"      "${CRAPI_HOST}"     "/" "200"
 check "Juice Shop" "${JUICESHOP_HOST}" "/" "200"
 check "DVGA"       "${DVGA_HOST}"      "/" "200"
-check "vAPI"       "${VAPI_HOST}"      "/" "200"
+check "VAmPI"      "${VAMPI_HOST}"      "/" "200"
 
 echo ""
 echo "crAPI API"

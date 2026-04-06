@@ -2,12 +2,12 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: juiceshop-tls
-  namespace: juice-shop
+  name: vampi-tls
+  namespace: vampi
 spec:
-  secretName: juiceshop-tls
+  secretName: vampi-tls
   issuerRef:
     name: local-ca-issuer
     kind: ClusterIssuer
   dnsNames:
-    - juiceshop.1broken.net
+    - vampi.1broken.net

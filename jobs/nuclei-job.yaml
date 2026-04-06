@@ -32,7 +32,7 @@ spec:
             - crapi.lab.local
             - juiceshop.lab.local
             - dvga.lab.local
-            - vapi.lab.local
+            - vampi.lab.local
 
       initContainers:
         - name: update-templates
@@ -58,7 +58,7 @@ spec:
             - "-target"
             - "https://dvga.lab.local"
             - "-target"
-            - "https://vapi.lab.local"
+            - "https://vampi.lab.local"
             - "-tags"
             - "oast,exposure,misconfig,default-login,token,graphql,api"
             - "-exclude-tags"

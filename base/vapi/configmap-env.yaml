@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vapi-env-config
+  namespace: vapi
+data:
+  env: |
+    APP_NAME=vAPI
+    APP_ENV=local
+    APP_KEY=base64:JUXTsCKQubRlvxGv6sVwkFL2rJ/gSksD4B/68948Mww=
+    APP_DEBUG=true
+    APP_URL=http://localhost
+    LOG_CHANNEL=errorlog
+    DB_CONNECTION=mysql
+    DB_HOST=vapi-db
+    DB_PORT=3306
+    DB_DATABASE=vapi
+    DB_USERNAME=vapi
+    DB_PASSWORD=vapipassword
+    CACHE_DRIVER=file
+    SESSION_DRIVER=file
+    QUEUE_CONNECTION=sync

@@ -5,10 +5,53 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lab.env"
+
+# Load lab config and secrets safely
+# Handles special characters in values (JWT tokens, passwords etc.)
+load_lab_env() {
+  local env_file="${1}"
+  local secrets_file="$(dirname "${env_file}")/lab.secrets"
+
+  if [ ! -f "${env_file}" ]; then
+    echo "ERROR: ${env_file} not found"; exit 1
+  fi
+
+  # Parse key=value, skip comments and blanks
+  _parse_env() {
+    local file="${1}"
+    while IFS= read -r line || [ -n "$line" ]; do
+      [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+      [[ -z "${line// }" ]] && continue
+      local key="${line%%=*}"
+      local value="${line#*=}"
+      value="${value%%#*}"
+      value="${value#"${value%%[![:space:]]*}"}"
+      value="${value%"${value##*[![:space:]]}"}"
+      [[ "${value}" =~ ^\'(.*)\'$ ]] && value="${BASH_REMATCH[1]}"
+      [[ "${value}" =~ ^\"(.*)\"$ ]] && value="${BASH_REMATCH[1]}"
+      export "${key}=${value}" 2>/dev/null || true
+    done < "${file}"
+  }
+
+  _parse_env "${env_file}"
+
+  # Load secrets if present
+  if [ -f "${secrets_file}" ]; then
+    _parse_env "${secrets_file}"
+  fi
+
+  # Resolve hostnames from LAB_DOMAIN
+  export CRAPI_HOST="crapi.${LAB_DOMAIN}"
+  export JUICESHOP_HOST="juiceshop.${LAB_DOMAIN}"
+  export DVGA_HOST="dvga.${LAB_DOMAIN}"
+  export VAMPI_HOST="vampi.${LAB_DOMAIN}"
+}
+
+
+load_lab_env "${SCRIPT_DIR}/../lab.env"
 
 echo "Creating namespaces..."
-for ns in cert-manager nginx-ingress monitoring crapi juice-shop dvga vapi; do
+for ns in cert-manager nginx-ingress monitoring crapi juice-shop dvga vampi; do
   kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f -
 done
 
@@ -35,7 +78,7 @@ if [ "${LAB_DOMAIN}" != "lab.local" ]; then
   for f in base/crapi/ingress.yaml base/crapi/certificate.yaml \
             base/juiceshop/ingress.yaml base/juiceshop/certificate.yaml \
             base/dvga/ingress.yaml base/dvga/certificate.yaml \
-            base/vapi/ingress.yaml base/vapi/certificate.yaml; do
+            base/vampi/ingress.yaml base/vampi/certificate.yaml; do
     sed -i "s/\.lab\.local/.${LAB_DOMAIN}/g" "$f"
   done
   echo "  Ingress hostnames updated"
@@ -47,4 +90,4 @@ echo "Lab endpoints will be available at:"
 echo "  https://${CRAPI_HOST}"
 echo "  https://${JUICESHOP_HOST}"
 echo "  https://${DVGA_HOST}"
-echo "  https://${VAPI_HOST}"
+echo "  https://${VAMPI_HOST}"

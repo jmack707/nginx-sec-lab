@@ -64,7 +64,7 @@ spec:
             - crapi.lab.local
             - juiceshop.lab.local
             - dvga.lab.local
-            - vapi.lab.local
+            - vampi.lab.local
 
       containers:
         - name: gotestwaf
