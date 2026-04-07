@@ -114,12 +114,24 @@ else
   ok "Helmfile installed ($(helmfile version))"
 fi
 
-if ! helm plugin list 2>/dev/null | grep -q diff; then
-  info "Installing helm-diff plugin..."
-  helm plugin install https://github.com/databus23/helm-diff
-  ok "helm-diff installed"
+# ── helm-diff plugin ─────────────────────────────────────────────────────────
+header "helm-diff plugin"
+if [[ -n "${REAL_USER:-}" ]]; then
+  if ! sudo -u "$REAL_USER" helm plugin list 2>/dev/null | grep -q diff; then
+    info "Installing helm-diff plugin for $REAL_USER..."
+    sudo -u "$REAL_USER" helm plugin install https://github.com/databus23/helm-diff
+    ok "helm-diff installed for $REAL_USER"
+  else
+    ok "helm-diff already installed for $REAL_USER"
+  fi
 else
-  ok "helm-diff already installed"
+  if ! helm plugin list 2>/dev/null | grep -q diff; then
+    info "Installing helm-diff plugin..."
+    helm plugin install https://github.com/databus23/helm-diff
+    ok "helm-diff installed"
+  else
+    ok "helm-diff already installed"
+  fi
 fi
 
 # ── Task ──────────────────────────────────────────────────────────────────────

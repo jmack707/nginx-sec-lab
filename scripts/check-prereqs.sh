@@ -28,12 +28,17 @@ check() {
     return
   fi
 
-  local version
-  version=$(eval "$version_cmd" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+  local raw version
+  raw=$(eval "$version_cmd" 2>&1) || true
+  version=$(printf '%s\n' "$raw" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || true)
 
   if [[ -z "$version" ]]; then
-    echo -e "  ${YELLOW}UNKNOWN${NC}  $name (found but version undetectable)"
-    PASS=$((PASS+1))
+    echo -e "  ${RED}FAIL${NC}     $name (installed but not responding)"
+    local err
+    err=$(printf '%s\n' "$raw" | head -1)
+    [[ -n "$err" ]] && echo -e "           error: ${err}"
+    echo -e "           hint: ${CYAN}$install_hint${NC}"
+    FAIL=$((FAIL+1))
     return
   fi
 
@@ -159,8 +164,9 @@ if docker info &>/dev/null; then
   echo -e "  ${GREEN}OK${NC}       Docker daemon running (v${DOCKER_VER})"
   PASS=$((PASS+1))
 else
-  echo -e "  ${RED}FAIL${NC}     Docker daemon not running"
+  echo -e "  ${RED}FAIL${NC}     Docker daemon not running or not accessible to this user"
   echo -e "           Run: ${CYAN}sudo systemctl start docker${NC}"
+  echo -e "           Or:  ${CYAN}sudo usermod -aG docker \$USER && newgrp docker${NC}"
   FAIL=$((FAIL+1))
 fi
 
@@ -206,4 +212,4 @@ fi
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-exit $FAIL
+(( FAIL == 0 )) || exit 1
