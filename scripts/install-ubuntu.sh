@@ -34,7 +34,7 @@ apt-get install -y -qq \
   curl wget git jq python3 \
   apt-transport-https ca-certificates gnupg \
   lsb-release software-properties-common \
-  iproute2 net-tools
+  iproute2 net-tools bash-completion
 ok "Base packages installed"
 
 # ── Docker ────────────────────────────────────────────────────────────────────
@@ -76,6 +76,30 @@ else
     > /etc/apt/sources.list.d/kubernetes.list
   apt-get update -qq && apt-get install -y -qq kubectl
   ok "kubectl installed"
+fi
+
+# ── kubectl bash completion ──────────────────────────────────────────────────
+header "kubectl bash completion"
+if [[ -n "${REAL_USER:-}" ]]; then
+  USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
+  BASHRC="$USER_HOME/.bashrc"
+  KCOMP_MARKER='# >>> nginx-sec-lab kubectl completion >>>'
+  if [[ -f "$BASHRC" ]] && ! grep -qF "$KCOMP_MARKER" "$BASHRC"; then
+    cat >> "$BASHRC" <<'EOF'
+
+# >>> nginx-sec-lab kubectl completion >>>
+source <(kubectl completion bash)
+alias k=kubectl
+complete -o default -F __start_kubectl k
+# <<< nginx-sec-lab kubectl completion <<<
+EOF
+    chown "$REAL_USER:$REAL_USER" "$BASHRC"
+    ok "kubectl completion + 'k' alias added to $BASHRC"
+  else
+    ok "kubectl completion already configured"
+  fi
+else
+  warn "No REAL_USER detected -- skipping bashrc edit"
 fi
 
 # ── k3d ───────────────────────────────────────────────────────────────────────
