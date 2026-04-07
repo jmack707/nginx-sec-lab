@@ -4,6 +4,7 @@
 
 # ── Credentials -- NEVER commit these ────────────────────────────────────────
 lab.secrets
+lab.env
 
 # ── Generated CA files ───────────────────────────────────────────────────────
 root_ca.crt
