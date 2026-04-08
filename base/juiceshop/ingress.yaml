@@ -12,10 +12,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - juiceshop.1broken.net
+        - juiceshop.test.local
       secretName: juiceshop-tls
   rules:
-    - host: juiceshop.1broken.net
+    - host: juiceshop.test.local
       http:
         paths:
           - path: /

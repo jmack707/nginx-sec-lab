@@ -191,31 +191,42 @@ tasks:
       - task: waf-off
 
   apps:down:
-    desc: "Remove all demo application namespaces"
+    desc: "Remove demo app namespaces listed in LAB_APPS"
     cmds:
-      - kubectl delete namespace crapi juice-shop dvga vampi --ignore-not-found=true
-      - echo "All demo apps removed"
+      - |
+        # Read LAB_APPS from lab.env (default: all four)
+        APPS=$(grep -E '^LAB_APPS=' lab.env 2>/dev/null \
+          | sed -E 's/^LAB_APPS=//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+          || echo "crapi juiceshop dvga vampi")
+        APPS="${APPS:-crapi juiceshop dvga vampi}"
+        # Map app key -> namespace (juiceshop -> juice-shop)
+        NS=""
+        for a in ${APPS//,/ }; do
+          case "$a" in
+            juiceshop) NS="$NS juice-shop" ;;
+            crapi|dvga|vampi) NS="$NS $a" ;;
+            *) echo "WARN: unknown app '$a' -- skipping" ;;
+          esac
+        done
+        if [ -n "$NS" ]; then
+          kubectl delete namespace $NS --ignore-not-found=true
+        fi
+      - echo "Demo apps removed"
 
   # ---------------------------------------------------------------------------
   # WAF
   # ---------------------------------------------------------------------------
 
   waf-on:
-    desc: "Enable NGINX App Protect WAF on all apps"
+    desc: "Enable NGINX App Protect WAF on apps in LAB_APPS"
     cmds:
-      - kubectl apply -k overlays/crapi/waf-enabled
-      - kubectl apply -k overlays/juiceshop/waf-enabled
-      - kubectl apply -k overlays/dvga/waf-enabled
-      - kubectl apply -k overlays/vampi/waf-enabled
+      - bash scripts/apps-waf.sh on
       - echo "WAF enabled"
 
   waf-off:
-    desc: "Disable WAF on all apps (baseline mode)"
+    desc: "Disable WAF on apps in LAB_APPS (baseline mode)"
     cmds:
-      - kubectl apply -k overlays/crapi/waf-disabled
-      - kubectl apply -k overlays/juiceshop/waf-disabled
-      - kubectl apply -k overlays/dvga/waf-disabled
-      - kubectl apply -k overlays/vampi/waf-disabled
+      - bash scripts/apps-waf.sh off
       - echo "WAF disabled"
 
   # ---------------------------------------------------------------------------
@@ -339,4 +350,3 @@ tasks:
     desc: "Run all post-deploy verification checks"
     cmds:
       - bash scripts/health-check.sh
-
