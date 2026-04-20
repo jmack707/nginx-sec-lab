@@ -1,351 +1,1034 @@
-# yaml-language-server: $schema=https://taskfile.dev/schema.json
-version: '3'
-
-vars:
-  CLUSTER_NAME: nginx-sec-lab
-
-tasks:
-
-  # ---------------------------------------------------------------------------
-  # TOP LEVEL
-  # ---------------------------------------------------------------------------
-
-  install:
-    desc: "Install all prerequisites on Ubuntu 22.04/24.04 (requires sudo)"
-    cmds:
-      - sudo bash scripts/install-ubuntu.sh
-
-  check:
-    desc: "Verify all prerequisite tools are installed"
-    cmds:
-      - bash scripts/check-prereqs.sh
-
-  up:
-    desc: "Full lab up. Override CNI with: CNI=cilium task up"
-    cmds:
-      - task: ca:init
-      - task: check
-      - task: cluster
-      - task: cni:install
-      - task: images:import
-      - task: pre-deploy
-      - task: ca:import
-      - task: deploy
-      - task: issuer
-      - task: apps:up
-      - task: health
-
-  down:
-    desc: "Destroy the k3d cluster"
-    cmds:
-      - k3d cluster delete nginx-sec-lab
-      - echo "Cluster destroyed"
-
-  reset:
-    desc: "Full teardown and rebuild"
-    cmds:
-      - task: down
-      - task: up
-
-  # ---------------------------------------------------------------------------
-  # CLUSTER
-  # ---------------------------------------------------------------------------
-
-  cluster:
-    desc: "Create k3d cluster. Override CNI with: CNI=cilium task cluster"
-    cmds:
-      - bash scripts/create-cluster.sh
-
-  # ---------------------------------------------------------------------------
-  # CNI
-  # ---------------------------------------------------------------------------
-
-  cni:install:
-    desc: "Install CNI. Default: kindnet. Override with: CNI=cilium task cni:install"
-    cmds:
-      - bash scripts/install-cni.sh
-
-  cni:status:
-    desc: "Show CNI status and node assignments"
-    cmds:
-      - bash scripts/cni-status.sh
-
-  cni:hubble:
-    desc: "Port-forward Hubble UI to localhost:12000 (Cilium only)"
-    cmds:
-      - echo "Hubble UI at http://localhost:12000 -- Ctrl+C to stop"
-      - kubectl port-forward svc/hubble-ui 12000:80 -n kube-system
-
-  cni:upgrade:
-    desc: "Upgrade Cilium in-place. Use MODE=bigip for BIG-IP VTEP mode"
-    cmds:
-      - bash scripts/upgrade-cilium.sh
-
-  # ---------------------------------------------------------------------------
-  # BIG-IP
-  # ---------------------------------------------------------------------------
-
-  bigip:configure:
-    desc: "Interactive: configure BIG-IP connection -- run before bigip:cis:install"
-    cmds:
-      - bash scripts/bigip-configure.sh
-
-  bigip:tunnel:setup:
-    desc: "Print BIG-IP TMSH commands for Cilium VTEP tunnel setup"
-    cmds:
-      - bash scripts/bigip-cilium-tunnel.sh
-
-  bigip:cis:install:
-    desc: "Install BIG-IP CIS via Helm. Override with: CIS_MODE=cluster task bigip:cis:install"
-    cmds:
-      - bash scripts/install-cis.sh
-
-  bigip:cis:status:
-    desc: "Show CIS pod status and recent logs"
-    cmds:
-      - kubectl get pods -n kube-system -l app=k8s-bigip-ctlr
-      - kubectl logs -n kube-system -l app=k8s-bigip-ctlr --tail=30
-
-  # ---------------------------------------------------------------------------
-  # CA & TLS
-  # ---------------------------------------------------------------------------
-  ca:init:
-    desc: "One-time: create local CA cert and key in repo root (skips if already exists)"
-    cmds:
-      - |
-        if [ -f "root_ca.crt" ] && [ -f "root_ca.key" ]; then
-          echo "Local CA already exists -- skipping"
-          exit 0
-        fi
-        echo "Creating local CA with openssl..."
-        openssl genrsa -out root_ca.key 4096
-        openssl req -new -x509 -days 3650 \
-          -key root_ca.key \
-          -out root_ca.crt \
-          -subj "/CN=nginx-sec-lab Root CA/O=nginx-sec-lab/C=US"
-        echo "Local CA created:"
-        echo "  $(pwd)/root_ca.crt"
-        echo "  $(pwd)/root_ca.key"
-        openssl x509 -noout -subject -dates -in root_ca.crt
-
-  ca:import:
-    desc: "Import local CA into cluster as a Kubernetes secret"
-    cmds:
-      - kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
-      - |
-        kubectl create secret tls local-ca \
-          --cert root_ca.crt \
-          --key root_ca.key \
-          --namespace cert-manager \
-          --dry-run=client -o yaml | kubectl apply -f -
-      - echo "CA imported"
-
-  # ---------------------------------------------------------------------------
-  # INFRASTRUCTURE
-  # ---------------------------------------------------------------------------
-
-
-  pre-deploy:
-    desc: "Create namespaces, secrets and ConfigMaps needed before helmfile runs"
-    cmds:
-      - bash scripts/pre-deploy.sh
-
-  deploy:
-    desc: "Deploy all Helm releases via helmfile"
-    cmds:
-      - helmfile sync
-      - kubectl rollout status deployment/cert-manager -n cert-manager --timeout=180s
-      - |
-        DEPLOY=$(kubectl get deployment -n nginx-ingress -o name 2>/dev/null | head -1)
-        [ -n "$DEPLOY" ] && kubectl rollout status "$DEPLOY" -n nginx-ingress --timeout=180s || echo "WARN: no nginx-ingress deployment found" 
-      - echo "Infrastructure deployed"
-
-  issuer:
-    desc: "Apply ClusterIssuer, App Protect policies, and Grafana dashboard"
-    cmds:
-      - kubectl apply -f manifests/namespaces.yaml
-      - kubectl apply -f manifests/cluster-issuer.yaml
-      - |
-        kubectl apply -f policies/ap-logconf.yaml || echo "SKIP: APLogConf not available"
-      - |
-        kubectl apply -f policies/ap-policy-owasp.yaml || echo "SKIP: APPolicy not available"
-      - |
-        kubectl apply -f policies/ap-policy-dataguard.yaml || echo "SKIP: APPolicy not available"
-      - echo "Issuer and WAF policies applied"
-
-  grafana:dashboard:
-    desc: "Apply Grafana dashboard ConfigMaps (sidecar hot-loads within ~30s, no restart)"
-    cmds:
-      - kubectl apply -f grafana/nginx-dashboard.yaml
-      - echo "Dashboards applied. Grafana sidecar will auto-import within ~30s."
-      - echo "Open Grafana with:  task metrics"
-
-  # ---------------------------------------------------------------------------
-  # DEMO APPLICATIONS
-  # ---------------------------------------------------------------------------
-
-  apps:up:
-    desc: "Deploy all demo applications (WAF disabled by default)"
-    cmds:
-      - task: waf-off
-
-  apps:down:
-    desc: "Remove demo app namespaces listed in LAB_APPS"
-    cmds:
-      - |
-        # Read LAB_APPS from lab.env (default: all four)
-        APPS=$(grep -E '^LAB_APPS=' lab.env 2>/dev/null \
-          | sed -E 's/^LAB_APPS=//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
-          || echo "crapi juiceshop dvga vampi")
-        APPS="${APPS:-crapi juiceshop dvga vampi}"
-        # Map app key -> namespace (juiceshop -> juice-shop)
-        NS=""
-        for a in ${APPS//,/ }; do
-          case "$a" in
-            juiceshop) NS="$NS juice-shop" ;;
-            crapi|dvga|vampi) NS="$NS $a" ;;
-            *) echo "WARN: unknown app '$a' -- skipping" ;;
-          esac
-        done
-        if [ -n "$NS" ]; then
-          kubectl delete namespace $NS --ignore-not-found=true
-        fi
-      - echo "Demo apps removed"
-
-  # ---------------------------------------------------------------------------
-  # WAF
-  # ---------------------------------------------------------------------------
-
-  waf-on:
-    desc: "Enable NGINX App Protect WAF on apps in LAB_APPS"
-    cmds:
-      - bash scripts/apps-waf.sh on
-      - echo "WAF enabled"
-
-  waf-off:
-    desc: "Disable WAF on apps in LAB_APPS (baseline mode)"
-    cmds:
-      - bash scripts/apps-waf.sh off
-      - echo "WAF disabled"
-
-  # ---------------------------------------------------------------------------
-  # SCANNING
-  # ---------------------------------------------------------------------------
-
-  scan:
-    desc: "Run GoTestWAF against crAPI"
-    cmds:
-      - bash scripts/run-scan.sh gotestwaf
-
-  scan:nuclei:
-    desc: "Run Nuclei template scan across all apps"
-    cmds:
-      - bash scripts/run-scan.sh nuclei
-
-  locust:
-    desc: "Seed crAPI users then run Locust traffic generation"
-    cmds:
-      - bash scripts/run-locust.sh
-
-  locust:logs:
-    desc: "Follow Locust traffic generation logs"
-    cmds:
-      - kubectl logs -f job/locust-traffic
-
-  # ---------------------------------------------------------------------------
-  # OBSERVABILITY
-  # ---------------------------------------------------------------------------
-
-  metrics:
-    desc: "Port-forward Grafana to localhost:3000 (admin/admin)"
-    cmds:
-      - echo "Grafana at http://localhost:3000 -- Ctrl+C to stop"
-      - kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
-
-  prometheus:
-    desc: "Port-forward Prometheus to localhost:9090"
-    cmds:
-      - echo "Prometheus at http://localhost:9090 -- Ctrl+C to stop"
-      - kubectl port-forward svc/kube-prometheus-stack-prometheus 9090:9090 -n monitoring
-
-  logs:waf:
-    desc: "Tail NGINX App Protect security event log"
-    cmds:
-      - kubectl logs -n nginx-ingress -l app=nginx-ingress -c app-protect-log --follow --tail=50
-
-  logs:nginx:
-    desc: "Tail NGINX Ingress Controller access log"
-    cmds:
-      - kubectl logs -n nginx-ingress -l app=nginx-ingress --follow --tail=100
-
-  # ---------------------------------------------------------------------------
-  # APP UTILITIES
-  # ---------------------------------------------------------------------------
-
-  crapi:seed:
-    desc: "Register test users in crAPI (run before task locust)"
-    cmds:
-      - kubectl delete job crapi-seed -n crapi --ignore-not-found=true
-      - kubectl apply -f jobs/crapi-seed-job.yaml
-      - kubectl wait --for=condition=complete job/crapi-seed -n crapi --timeout=120s
-      - kubectl logs job/crapi-seed -n crapi
-      - echo "crAPI users seeded"
-
-  crapi:mail:
-    desc: "Port-forward MailHog to localhost:8025"
-    cmds:
-      - echo "MailHog at http://localhost:8025 -- Ctrl+C to stop"
-      - kubectl port-forward svc/mailhog 8025:8025 -n crapi
-
-  crapi:shell:
-    desc: "Shell into crapi-identity container"
-    cmds:
-      - kubectl exec -it -n crapi deploy/crapi-identity -- /bin/sh
-
-  juiceshop:shell:
-    desc: "Shell into juice-shop container"
-    cmds:
-      - kubectl exec -it -n juice-shop deploy/juice-shop -- /bin/sh
-
-  # ---------------------------------------------------------------------------
-  # HEALTH
-  # ---------------------------------------------------------------------------
-
-
-  images:import:
-    desc: "Import all lab images from local Docker cache into cluster nodes (no internet needed)"
-    cmds:
-      - bash scripts/import-images.sh
-
-  # ---------------------------------------------------------------------------
-  # LOCAL REGISTRY
-  # ---------------------------------------------------------------------------
-
-  registry:setup:
-    desc: "Create local k3d registry (run once -- survives task down/up)"
-    cmds:
-      - sudo bash scripts/setup-registry.sh
-
-  registry:cache:
-    desc: "Pull all lab images and store in local registry (requires internet once)"
-    cmds:
-      - bash scripts/pull-and-cache.sh
-
-  registry:ls:
-    desc: "List images stored in the local registry"
-    cmds:
-      - |
-        curl -s http://k3d-registry.localhost:5000/v2/_catalog 2>/dev/null \
-          | python3 -m json.tool \
-          || echo "Registry not running -- run: task registry:setup"
-
-
-  test:
-    desc: "Run curl smoke tests against all lab endpoints"
-    cmds:
-      - bash scripts/test-endpoints.sh
-
-  health:
-    desc: "Run all post-deploy verification checks"
-    cmds:
-      - bash scripts/health-check.sh
+# Grafana dashboards for the NGINX Security Lab.
+#
+# Both ConfigMaps carry the `grafana_dashboard: "1"` label, which the Grafana
+# sidecar (k8s-sidecar, shipped with kube-prometheus-stack) watches for. The
+# sidecar hot-loads changes within ~30s — no Grafana pod restart is needed.
+#
+# The `grafana_folder` annotation tells the sidecar to group both dashboards
+# under a single "NGINX Lab" folder in the Grafana UI.
+#
+# OSS dashboard:  works in NGINX_MODE=oss (default). Queries stub_status-based
+#                 metrics — global counters only, no per-host breakdowns.
+# Plus dashboard: works in NGINX_MODE=plus. Queries server-zone metrics for
+#                 per-ingress request rate, response codes, throughput.
+#                 Panels show "No data" in OSS mode.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-lab-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: "NGINX Lab"
+data:
+  nginx-lab-oss.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "type": "text",
+          "title": "",
+          "gridPos": {
+            "h": 3,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "options": {
+            "mode": "markdown",
+            "content": "**NGINX OSS mode.** Metrics come from `stub_status` \u2014 global counters with no per-host / per-status labels. For per-app request volume, WAF blocks, and upstream response codes, set `NGINX_MODE=plus` in `lab.env` and use the **NGINX Security Lab \u2014 Plus** dashboard."
+          }
+        },
+        {
+          "type": "stat",
+          "title": "NGINX Status",
+          "description": "Status of the last NGINX config reload (1 = OK, 0 = FAIL). 'No data' means the controller is unreachable.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 3
+          },
+          "id": 2,
+          "targets": [
+            {
+              "expr": "max(nginx_ingress_controller_nginx_last_reload_status)",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "FAIL",
+                      "color": "red"
+                    }
+                  }
+                },
+                {
+                  "type": "value",
+                  "options": {
+                    "1": {
+                      "text": "OK",
+                      "color": "green"
+                    }
+                  }
+                }
+              ],
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "none",
+              "noValue": "No data"
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "textMode": "auto"
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Last Reload Duration",
+          "description": "Time taken for the most recent NGINX config reload. Elevated values indicate heavy config churn or resource pressure.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 3
+          },
+          "id": 3,
+          "targets": [
+            {
+              "expr": "max(nginx_ingress_controller_nginx_last_reload_milliseconds)",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 500
+                  },
+                  {
+                    "color": "red",
+                    "value": 2000
+                  }
+                ]
+              },
+              "unit": "ms"
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "auto"
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Reload Errors (10m)",
+          "description": "Count of NGINX reload failures in the last 10 minutes. Anything >0 warrants a look at controller logs.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 12,
+            "y": 3
+          },
+          "id": 4,
+          "targets": [
+            {
+              "expr": "sum(increase(nginx_ingress_controller_nginx_reload_errors_total[10m]))",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              },
+              "unit": "short"
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Worker Processes",
+          "description": "Active NGINX worker processes. During/after a reload, 'old' generation workers may briefly coexist with 'current' ones.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 18,
+            "y": 3
+          },
+          "id": 5,
+          "targets": [
+            {
+              "expr": "sum(nginx_ingress_controller_nginx_worker_processes_total)",
+              "legendFormat": "total",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Total Request Rate",
+          "description": "Global request rate across all ingresses. OSS stub_status has no per-host label, so this cannot be split by app.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 7
+          },
+          "id": 6,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_http_requests_total[2m]))",
+              "legendFormat": "req/s",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 15,
+                "drawStyle": "line"
+              },
+              "unit": "reqps"
+            }
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Connection States",
+          "description": "Current NGINX worker connections by state. 'Active' = total in-flight. High 'waiting' is normal (keep-alive); sustained 'reading/writing' near worker limits indicates backpressure.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 7
+          },
+          "id": 7,
+          "targets": [
+            {
+              "expr": "sum(nginx_ingress_nginx_connections_active)",
+              "legendFormat": "active",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(nginx_ingress_nginx_connections_reading)",
+              "legendFormat": "reading",
+              "refId": "B"
+            },
+            {
+              "expr": "sum(nginx_ingress_nginx_connections_writing)",
+              "legendFormat": "writing",
+              "refId": "C"
+            },
+            {
+              "expr": "sum(nginx_ingress_nginx_connections_waiting)",
+              "legendFormat": "waiting",
+              "refId": "D"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              },
+              "unit": "short"
+            }
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Connection Throughput",
+          "description": "Accepted vs handled rates. A gap (accepted > handled) indicates connections dropped by NGINX \u2014 usually worker_connections exhaustion.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 15
+          },
+          "id": 8,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_connections_accepted[2m]))",
+              "legendFormat": "accepted/s",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_connections_handled[2m]))",
+              "legendFormat": "handled/s",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              },
+              "unit": "cps"
+            }
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Config Reload Activity",
+          "description": "Reload frequency (by reason) and reload errors. 'endpoints' reason = pod IPs changed; 'other' = ingress/config change. Errors should be zero.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 15
+          },
+          "id": 9,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_controller_nginx_reloads_total[5m])) by (reason)",
+              "legendFormat": "reloads: {{reason}}",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(nginx_ingress_controller_nginx_reload_errors_total[5m]))",
+              "legendFormat": "errors",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              },
+              "unit": "ops"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "errors"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 38,
+      "tags": [
+        "nginx",
+        "lab",
+        "oss"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-30m",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "NGINX Security Lab \u2014 OSS",
+      "uid": "nginx-sec-lab-oss",
+      "version": 1
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-lab-dashboard-plus
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: "NGINX Lab"
+data:
+  nginx-lab-plus.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "type": "text",
+          "title": "",
+          "gridPos": {
+            "h": 3,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "options": {
+            "mode": "markdown",
+            "content": "**NGINX Plus mode.** Panels below require `NGINX_MODE=plus` in `lab.env` and rely on server-zone metrics exposed by the NGINX Plus API. If panels are empty, verify: `kubectl logs -n nginx-ingress deploy/nginx-ingress-controller | grep 'nginx version'` \u2014 the binary line should read `nginx-plus-*`. For OSS-mode metrics (connection state, reload health, global request rate), see the **NGINX Security Lab \u2014 OSS** dashboard."
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Total Request Rate",
+          "description": "Sum of per-server-zone request rates across all ingresses.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 3
+          },
+          "id": 2,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_server_zone_requests[2m]))",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "reqps",
+              "noValue": "No data"
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "auto"
+          }
+        },
+        {
+          "type": "stat",
+          "title": "In-Flight Requests",
+          "description": "Current requests being processed across all server zones. Sustained high values can indicate slow upstreams.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 6,
+            "y": 3
+          },
+          "id": 3,
+          "targets": [
+            {
+              "expr": "sum(nginx_ingress_nginx_server_zone_processing)",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 100
+                  },
+                  {
+                    "color": "red",
+                    "value": 500
+                  }
+                ]
+              },
+              "unit": "short",
+              "noValue": "No data"
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          }
+        },
+        {
+          "type": "stat",
+          "title": "4xx Rate",
+          "description": "Rate of 4xx responses across all server zones. Elevated 4xx with WAF enabled is the expected signal during attack scenarios.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 12,
+            "y": 3
+          },
+          "id": 4,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_server_zone_responses{code=\"4xx\"}[2m]))",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 10
+                  }
+                ]
+              },
+              "unit": "reqps",
+              "noValue": "No data"
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "auto"
+          }
+        },
+        {
+          "type": "stat",
+          "title": "5xx Rate",
+          "description": "Rate of 5xx responses across all server zones. Any non-zero value warrants investigation (upstream failure or NGINX internal error).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 18,
+            "y": 3
+          },
+          "id": 5,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_server_zone_responses{code=\"5xx\"}[2m]))",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.01
+                  }
+                ]
+              },
+              "unit": "reqps",
+              "noValue": "No data"
+            }
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "auto"
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Request Rate by App (server_zone)",
+          "description": "Per-ingress request rate. Each server_zone label corresponds to an ingress host (crapi, juiceshop, dvga, vampi).",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 7
+          },
+          "id": 6,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_server_zone_requests[2m])) by (server_zone)",
+              "legendFormat": "{{server_zone}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 15,
+                "drawStyle": "line"
+              },
+              "unit": "reqps"
+            }
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Responses by App and Code",
+          "description": "Responses per server_zone and class (1xx-5xx). Elevated 4xx for a specific app during WAF scenarios is the expected pattern.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 7
+          },
+          "id": 7,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_server_zone_responses[2m])) by (server_zone, code)",
+              "legendFormat": "{{server_zone}} {{code}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 20,
+                "drawStyle": "line",
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*4xx.*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*5xx.*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max"
+              ]
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Throughput by App (bytes/sec)",
+          "description": "Bytes received from clients and sent back per server zone.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 15
+          },
+          "id": 8,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_server_zone_received[2m])) by (server_zone)",
+              "legendFormat": "{{server_zone}} \u2190 in",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_server_zone_sent[2m])) by (server_zone)",
+              "legendFormat": "{{server_zone}} \u2192 out",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              },
+              "unit": "Bps"
+            }
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Discarded Requests by App",
+          "description": "Requests discarded before a response was sent (client disconnect, timeout, etc.) Sustained values indicate client-side or upstream pathology.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 15
+          },
+          "id": 9,
+          "targets": [
+            {
+              "expr": "sum(rate(nginx_ingress_nginx_server_zone_discarded[2m])) by (server_zone)",
+              "legendFormat": "{{server_zone}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "drawStyle": "line"
+              },
+              "unit": "reqps"
+            }
+          },
+          "options": {
+            "tooltip": {
+              "mode": "multi"
+            },
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          }
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 38,
+      "tags": [
+        "nginx",
+        "lab",
+        "plus"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-30m",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "NGINX Security Lab \u2014 Plus",
+      "uid": "nginx-sec-lab-plus",
+      "version": 1
+    }

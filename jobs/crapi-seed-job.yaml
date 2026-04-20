@@ -5,7 +5,20 @@
 #
 # crAPI requires user registration via the identity API before JWT
 # auth works. This job POSTs to /identity/api/auth/signup for each
-# test user defined in the USERS env var.
+# test user defined in the USERS heredoc.
+#
+# The init container waits on /identity/health_check, which is the
+# actual health endpoint Spring Boot serves -- same URL that
+# base/crapi/deployment-web.yaml polls in its own init container.
+#
+# Signup payload MUST include the `number` (phone) field -- crAPI's
+# SignUpForm marks it @NotBlank, and requests without it get 400
+# Validation Failed (body does not contain "already/exists/duplicate",
+# so a naive failure-counter treats it as a hard failure).
+#
+# User records are fed through a `while IFS=: read` loop rather than
+# `for entry in $USERS` so that names with spaces ("User One") are
+# parsed as a single field rather than being word-split by bash.
 #
 # Usage: task crapi:seed
 apiVersion: batch/v1
@@ -27,16 +40,18 @@ spec:
       restartPolicy: OnFailure
 
       initContainers:
-        # Wait for crAPI identity service to be ready before seeding
+        # Wait for crAPI identity service to be ready before seeding.
+        # /identity/health_check is the canonical path Spring Boot serves;
+        # /identity/api/health does NOT exist -- polling it would hang the
+        # init container forever and cause the job to time out.
         - name: wait-for-crapi
-          image: busybox:1.35
+          image: curlimages/curl:latest
           command:
             - sh
             - -c
             - |
-              echo "Waiting for crapi-identity:8080..."
-              until wget -qO- http://crapi-identity:8080/identity/api/health 2>/dev/null \
-                | grep -q "ok"; do
+              echo "Waiting for crapi-identity:8080/identity/health_check..."
+              until curl -sf http://crapi-identity:8080/identity/health_check >/dev/null 2>&1; do
                 echo "  not ready yet, retrying in 5s..."
                 sleep 5
               done
@@ -52,11 +67,6 @@ spec:
               set -e
 
               IDENTITY="http://crapi-identity:8080"
-              USERS='
-              user1@lab.local:Passw0rd!:User One
-              user2@lab.local:Passw0rd!:User Two
-              user3@lab.local:Passw0rd!:User Three
-              '
 
               echo "=== crAPI User Seeding ==="
               echo ""
@@ -65,45 +75,50 @@ spec:
               SKIP=0
               FAIL=0
 
-              for entry in $USERS; do
-                EMAIL=$(echo $entry | cut -d: -f1)
-                PASS=$(echo $entry | cut -d: -f2)
-                NAME=$(echo $entry | cut -d: -f3)
+              # Format per line:  EMAIL:PASSWORD:NAME:NUMBER
+              # Numbers must be unique -- crAPI enforces uniqueness on phone.
+              while IFS=: read -r EMAIL PASS NAME NUMBER; do
+                # Skip blank lines
+                [ -z "$EMAIL" ] && continue
 
-                echo "→ Registering $EMAIL..."
+                echo "-> Registering $EMAIL (name='$NAME', number=$NUMBER)..."
 
                 HTTP_CODE=$(curl -sk -o /tmp/resp.txt -w "%{http_code}" \
                   -X POST "${IDENTITY}/identity/api/auth/signup" \
                   -H "Content-Type: application/json" \
-                  -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASS}\",\"name\":\"${NAME}\"}")
+                  -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASS}\",\"name\":\"${NAME}\",\"number\":\"${NUMBER}\"}")
 
                 case "$HTTP_CODE" in
                   200|201)
-                    echo "  ✓ Registered: $EMAIL"
+                    echo "  OK Registered: $EMAIL"
                     SUCCESS=$((SUCCESS+1))
                     ;;
-                  400)
+                  400|403|409)
                     BODY=$(cat /tmp/resp.txt)
-                    if echo "$BODY" | grep -qi "already\|exists\|duplicate"; then
+                    if echo "$BODY" | grep -qi "already\|exists\|duplicate\|registered"; then
                       echo "  ~ Already exists: $EMAIL (skipping)"
                       SKIP=$((SKIP+1))
                     else
-                      echo "  ✗ Failed ($HTTP_CODE): $EMAIL — $(cat /tmp/resp.txt)"
+                      echo "  FAIL ($HTTP_CODE): $EMAIL -- $BODY"
                       FAIL=$((FAIL+1))
                     fi
                     ;;
                   *)
-                    echo "  ✗ Failed ($HTTP_CODE): $EMAIL — $(cat /tmp/resp.txt)"
+                    echo "  FAIL ($HTTP_CODE): $EMAIL -- $(cat /tmp/resp.txt)"
                     FAIL=$((FAIL+1))
                     ;;
                 esac
-              done
+              done <<'USERS_EOF'
+              user1@lab.local:Passw0rd!:User One:+15550100001
+              user2@lab.local:Passw0rd!:User Two:+15550100002
+              user3@lab.local:Passw0rd!:User Three:+15550100003
+              USERS_EOF
 
               echo ""
               echo "=== Seed Summary ==="
-              echo "  Registered: $SUCCESS"
+              echo "  Registered:              $SUCCESS"
               echo "  Skipped (already exist): $SKIP"
-              echo "  Failed: $FAIL"
+              echo "  Failed:                  $FAIL"
               echo ""
 
               if [ "$FAIL" -gt 0 ]; then
@@ -111,7 +126,7 @@ spec:
                 exit 1
               fi
 
-              echo "Seed complete — users ready for Locust"
+              echo "Seed complete -- users ready for Locust"
           resources:
             requests:
               memory: "32Mi"

@@ -178,7 +178,7 @@ tasks:
     cmds:
       - kubectl apply -f grafana/nginx-dashboard.yaml
       - echo "Dashboards applied. Grafana sidecar will auto-import within ~30s."
-      - echo "Open Grafana with:  task metrics"
+      - 'echo "Open Grafana with: task metrics"'
 
   # ---------------------------------------------------------------------------
   # DEMO APPLICATIONS
