@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 # scripts/pull-and-cache.sh
 # Pulls all lab images and stores them in the local registry.
-# Registry credentials are configured in lab.env.
+# Registry credentials are configured in lab.env / lab.secrets.
 #
 # DOCKERHUB_USER  -- set in lab.env to avoid Docker Hub rate limits
-# NGINX_JWT       -- set in lab.env only if using NGINX Plus / App Protect
+# NGINX_JWT       -- set in lab.secrets only if using NGINX Plus / App Protect
+# NGINX_MODE      -- "oss" (default) or "plus"
+#
+# NOTE: OSS and Plus NGINX Ingress images are cached at DISTINCT destination
+# paths so they cannot collide in the local registry:
+#   OSS  → k3d-registry.localhost:5000/nginx/nginx-ingress:3.4.3
+#   Plus → k3d-registry.localhost:5000/nginx-ic/nginx-plus-ingress:3.4.3
+# The NGINX image is also always re-pushed (the "already cached" shortcut is
+# bypassed for it), which self-heals any legacy poisoned tag from earlier
+# versions of this script that re-tagged Plus content into the OSS slot.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -95,9 +104,9 @@ login_registries() {
   # NGINX private registry (Plus/App Protect only)
   if [ "${NGINX_MODE:-oss}" = "plus" ]; then
     if [ -z "${NGINX_JWT:-}" ]; then
-      echo -e "${RED}ERROR: NGINX_MODE=plus but NGINX_JWT not set in lab.env${NC}"
+      echo -e "${RED}ERROR: NGINX_MODE=plus but NGINX_JWT not set in lab.secrets${NC}"
       echo "  Get token: https://my.f5.com > My Products > NGINX > Manage Subscriptions"
-      echo "  Set NGINX_JWT=<token> in lab.env"
+      echo "  Set NGINX_JWT=<token> in lab.secrets"
       exit 1
     fi
     if ! cat ~/.docker/config.json 2>/dev/null | grep -q "private-registry.nginx.com"; then
@@ -113,32 +122,40 @@ login_registries() {
 }
 
 # ── Image caching ─────────────────────────────────────────────────────────────
+# cache <src> <dst> [force]
+#   force=1 bypasses the "already cached" shortcut and always re-pulls/pushes.
 cache() {
-  local src="$1" dst="$2"
+  local src="$1" dst="$2" force="${3:-0}"
   local repo="${dst%%:*}" tag="${dst##*:}"
   [[ "$dst" != *":"* ]] && tag="latest"
 
-  if curl -sf "http://${REGISTRY}/v2/${repo}/tags/list" 2>/dev/null \
+  if [ "$force" != "1" ] && curl -sf "http://${REGISTRY}/v2/${repo}/tags/list" 2>/dev/null \
       | grep -q "\"${tag}\""; then
     ok "Already cached: ${src}"
     return
   fi
 
-  info "Pulling ${src}..."
+  if [ "$force" = "1" ]; then
+    info "Force re-cache: ${src}"
+  else
+    info "Pulling ${src}..."
+  fi
+
   if docker pull "${src}" --quiet 2>/dev/null; then
     docker tag "${src}" "${REGISTRY}/${dst}"
     docker push "${REGISTRY}/${dst}" --quiet 2>/dev/null \
-      && ok "Cached: ${src}" \
+      && ok "Cached: ${src} → ${REGISTRY}/${dst}" \
       || fail "Push failed: ${src}"
   else
     fail "Pull failed: ${src}"
   fi
 }
 
-# ── Determine NGINX image source ──────────────────────────────────────────────
+# ── Determine NGINX image source and destination ──────────────────────────────
+# Plus and OSS use distinct destination paths so they cannot collide.
 if [ "${NGINX_MODE:-oss}" = "plus" ]; then
   NGINX_IMAGE="private-registry.nginx.com/nginx-ic/nginx-plus-ingress:3.4.3"
-  NGINX_DST="nginx/nginx-ingress:3.4.3"
+  NGINX_DST="nginx-ic/nginx-plus-ingress:3.4.3"
 else
   NGINX_IMAGE="nginx/nginx-ingress:3.4.3"
   NGINX_DST="nginx/nginx-ingress:3.4.3"
@@ -163,7 +180,9 @@ echo "INFRASTRUCTURE"
 cache "quay.io/jetstack/cert-manager-controller:v1.14.7"  "quay.io/jetstack/cert-manager-controller:v1.14.7"
 cache "quay.io/jetstack/cert-manager-cainjector:v1.14.7"  "quay.io/jetstack/cert-manager-cainjector:v1.14.7"
 cache "quay.io/jetstack/cert-manager-webhook:v1.14.7"     "quay.io/jetstack/cert-manager-webhook:v1.14.7"
-cache "${NGINX_IMAGE}"                                     "${NGINX_DST}"
+# Always re-push the NGINX image so mode switches cannot leave a stale/poisoned
+# manifest at the destination tag. Docker layer dedup keeps this cheap.
+cache "${NGINX_IMAGE}"                                     "${NGINX_DST}"    1
 cache "grafana/grafana:10.4.0"                            "grafana/grafana:10.4.0"
 cache "quay.io/kiwigrid/k8s-sidecar:1.26.1"               "quay.io/kiwigrid/k8s-sidecar:1.26.1"
 cache "quay.io/prometheus/prometheus:v2.50.1"              "quay.io/prometheus/prometheus:v2.50.1"
