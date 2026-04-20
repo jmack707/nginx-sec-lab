@@ -2,9 +2,10 @@ grafana:
   adminPassword: "admin"
   persistence:
     enabled: false
-  # Dashboard will be imported manually via: kubectl apply -f grafana/nginx-dashboard.yaml
-  # Removing dashboardsConfigMaps here to avoid Grafana pod getting stuck
-  # waiting for a ConfigMap that doesn't exist at install time.
+  # Dashboards are shipped as ConfigMaps labeled grafana_dashboard: "1" in
+  # grafana/nginx-dashboard.yaml. The Grafana sidecar (k8s-sidecar, default
+  # in kube-prometheus-stack) watches for these and hot-loads them -- no
+  # Grafana pod restart is needed, and no dashboardsConfigMaps static injection.
 
 prometheus:
   prometheusSpec:
@@ -15,6 +16,11 @@ prometheus:
         cpu: 100m
       limits:
         memory: 512Mi
+
+    # Watch ALL ServiceMonitors and PodMonitors cluster-wide, regardless of
+    # chart labels. The NGINX Ingress chart (values/nginx-ingress.yaml) creates
+    # its own ServiceMonitor via serviceMonitor.create: true -- this is how it
+    # gets discovered. No additionalScrapeConfigs needed.
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
 
@@ -26,9 +32,3 @@ kubeStateMetrics:
 
 nodeExporter:
   enabled: true
-
-additionalScrapeConfigs:
-  - job_name: nginx-ingress
-    static_configs:
-      - targets:
-          - nginx-ingress.nginx-ingress.svc.cluster.local:9113

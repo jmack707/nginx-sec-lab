@@ -174,12 +174,11 @@ tasks:
       - echo "Issuer and WAF policies applied"
 
   grafana:dashboard:
-    desc: "Import NGINX security dashboard into Grafana (run after Grafana is Ready)"
+    desc: "Apply Grafana dashboard ConfigMaps (sidecar hot-loads within ~30s, no restart)"
     cmds:
       - kubectl apply -f grafana/nginx-dashboard.yaml
-      - kubectl rollout restart deployment/kube-prometheus-stack-grafana -n monitoring
-      - kubectl rollout status deployment/kube-prometheus-stack-grafana -n monitoring --timeout=120s
-      - echo "Grafana dashboard imported"
+      - echo "Dashboards applied. Grafana sidecar will auto-import within ~30s."
+      - echo "Open Grafana with:  task metrics"
 
   # ---------------------------------------------------------------------------
   # DEMO APPLICATIONS

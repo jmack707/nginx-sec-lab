@@ -1,221 +1,351 @@
----
-# Grafana dashboard ConfigMap
-# Automatically imported by kube-prometheus-stack via dashboardsConfigMaps in values/prometheus.yaml
-# Shows: NGINX request rate, WAF block rate, upstream response time, error rate per app
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: nginx-lab-dashboard
-  namespace: monitoring
-  labels:
-    grafana_dashboard: "1"
-data:
-  nginx-lab.json: |
-    {
-      "annotations": { "list": [] },
-      "editable": true,
-      "fiscalYearStartMonth": 0,
-      "graphTooltip": 1,
-      "id": null,
-      "links": [],
-      "panels": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "lineWidth": 2, "fillOpacity": 10 },
-              "unit": "reqps"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-          "id": 1,
-          "options": { "tooltip": { "mode": "multi" } },
-          "targets": [
-            {
-              "expr": "sum(rate(nginx_ingress_nginx_http_requests_total[2m])) by (ingress)",
-              "legendFormat": "{{ ingress }}",
-              "refId": "A"
-            }
-          ],
-          "title": "Request Rate by App (req/s)",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "fixedColor": "#F2495C", "mode": "fixed" },
-              "custom": { "lineWidth": 2, "fillOpacity": 20 },
-              "unit": "short"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-          "id": 2,
-          "targets": [
-            {
-              "expr": "sum(rate(nginx_ingress_controller_requests{status=~\"4..|5..\"}[2m])) by (ingress, status)",
-              "legendFormat": "{{ ingress }} HTTP {{ status }}",
-              "refId": "A"
-            }
-          ],
-          "title": "Error Rate by App (4xx/5xx)",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "fixedColor": "#FF9830", "mode": "fixed" },
-              "custom": { "lineWidth": 2, "fillOpacity": 15 },
-              "unit": "reqps"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-          "id": 3,
-          "targets": [
-            {
-              "expr": "sum(rate(nginx_ingress_nginx_http_requests_total{status=\"400\"}[2m]))",
-              "legendFormat": "WAF Blocks (HTTP 400)",
-              "refId": "A"
-            },
-            {
-              "expr": "sum(rate(nginx_ingress_nginx_http_requests_total{status=\"403\"}[2m]))",
-              "legendFormat": "WAF Blocks (HTTP 403)",
-              "refId": "B"
-            }
-          ],
-          "title": "WAF Block Rate",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "palette-classic" },
-              "custom": { "lineWidth": 2 },
-              "unit": "s"
-            }
-          },
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-          "id": 4,
-          "targets": [
-            {
-              "expr": "histogram_quantile(0.95, sum(rate(nginx_ingress_nginx_upstream_response_time_seconds_bucket[2m])) by (le, ingress))",
-              "legendFormat": "{{ ingress }} p95",
-              "refId": "A"
-            },
-            {
-              "expr": "histogram_quantile(0.50, sum(rate(nginx_ingress_nginx_upstream_response_time_seconds_bucket[2m])) by (le, ingress))",
-              "legendFormat": "{{ ingress }} p50",
-              "refId": "B"
-            }
-          ],
-          "title": "Upstream Response Time (p50/p95)",
-          "type": "timeseries"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": {
-            "defaults": { "unit": "short", "color": { "mode": "thresholds" },
-              "thresholds": { "steps": [
-                { "color": "green", "value": null },
-                { "color": "yellow", "value": 100 },
-                { "color": "red", "value": 500 }
-              ]}
-            }
-          },
-          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
-          "id": 5,
-          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
-          "targets": [
-            {
-              "expr": "sum(increase(nginx_ingress_nginx_http_requests_total{status=~\"4..|5..\"}[10m]))",
-              "legendFormat": "Errors (10m)",
-              "refId": "A"
-            }
-          ],
-          "title": "Errors Last 10m",
-          "type": "stat"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": {
-            "defaults": { "unit": "reqps", "color": { "mode": "thresholds" },
-              "thresholds": { "steps": [
-                { "color": "blue", "value": null }
-              ]}
-            }
-          },
-          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 16 },
-          "id": 6,
-          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
-          "targets": [
-            {
-              "expr": "sum(rate(nginx_ingress_nginx_http_requests_total[2m]))",
-              "legendFormat": "Total req/s",
-              "refId": "A"
-            }
-          ],
-          "title": "Current Request Rate",
-          "type": "stat"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": {
-            "defaults": { "unit": "short", "color": { "mode": "thresholds" },
-              "thresholds": { "steps": [
-                { "color": "green", "value": null },
-                { "color": "orange", "value": 1 }
-              ]}
-            }
-          },
-          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 16 },
-          "id": 7,
-          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
-          "targets": [
-            {
-              "expr": "sum(increase(nginx_ingress_nginx_http_requests_total{status=\"403\"}[10m]))",
-              "legendFormat": "WAF Blocks (10m)",
-              "refId": "A"
-            }
-          ],
-          "title": "WAF Blocks Last 10m",
-          "type": "stat"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "fieldConfig": {
-            "defaults": { "unit": "s", "color": { "mode": "thresholds" },
-              "thresholds": { "steps": [
-                { "color": "green", "value": null },
-                { "color": "yellow", "value": 0.5 },
-                { "color": "red", "value": 2 }
-              ]}
-            }
-          },
-          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 16 },
-          "id": 8,
-          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
-          "targets": [
-            {
-              "expr": "histogram_quantile(0.95, sum(rate(nginx_ingress_nginx_upstream_response_time_seconds_bucket[2m])) by (le))",
-              "legendFormat": "p95 latency",
-              "refId": "A"
-            }
-          ],
-          "title": "p95 Latency",
-          "type": "stat"
-        }
-      ],
-      "refresh": "10s",
-      "schemaVersion": 38,
-      "tags": ["nginx", "lab", "security"],
-      "templating": { "list": [] },
-      "time": { "from": "now-30m", "to": "now" },
-      "timepicker": {},
-      "timezone": "browser",
-      "title": "NGINX Security Lab",
-      "uid": "nginx-sec-lab",
-      "version": 1
-    }
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: '3'
+
+vars:
+  CLUSTER_NAME: nginx-sec-lab
+
+tasks:
+
+  # ---------------------------------------------------------------------------
+  # TOP LEVEL
+  # ---------------------------------------------------------------------------
+
+  install:
+    desc: "Install all prerequisites on Ubuntu 22.04/24.04 (requires sudo)"
+    cmds:
+      - sudo bash scripts/install-ubuntu.sh
+
+  check:
+    desc: "Verify all prerequisite tools are installed"
+    cmds:
+      - bash scripts/check-prereqs.sh
+
+  up:
+    desc: "Full lab up. Override CNI with: CNI=cilium task up"
+    cmds:
+      - task: ca:init
+      - task: check
+      - task: cluster
+      - task: cni:install
+      - task: images:import
+      - task: pre-deploy
+      - task: ca:import
+      - task: deploy
+      - task: issuer
+      - task: apps:up
+      - task: health
+
+  down:
+    desc: "Destroy the k3d cluster"
+    cmds:
+      - k3d cluster delete nginx-sec-lab
+      - echo "Cluster destroyed"
+
+  reset:
+    desc: "Full teardown and rebuild"
+    cmds:
+      - task: down
+      - task: up
+
+  # ---------------------------------------------------------------------------
+  # CLUSTER
+  # ---------------------------------------------------------------------------
+
+  cluster:
+    desc: "Create k3d cluster. Override CNI with: CNI=cilium task cluster"
+    cmds:
+      - bash scripts/create-cluster.sh
+
+  # ---------------------------------------------------------------------------
+  # CNI
+  # ---------------------------------------------------------------------------
+
+  cni:install:
+    desc: "Install CNI. Default: kindnet. Override with: CNI=cilium task cni:install"
+    cmds:
+      - bash scripts/install-cni.sh
+
+  cni:status:
+    desc: "Show CNI status and node assignments"
+    cmds:
+      - bash scripts/cni-status.sh
+
+  cni:hubble:
+    desc: "Port-forward Hubble UI to localhost:12000 (Cilium only)"
+    cmds:
+      - echo "Hubble UI at http://localhost:12000 -- Ctrl+C to stop"
+      - kubectl port-forward svc/hubble-ui 12000:80 -n kube-system
+
+  cni:upgrade:
+    desc: "Upgrade Cilium in-place. Use MODE=bigip for BIG-IP VTEP mode"
+    cmds:
+      - bash scripts/upgrade-cilium.sh
+
+  # ---------------------------------------------------------------------------
+  # BIG-IP
+  # ---------------------------------------------------------------------------
+
+  bigip:configure:
+    desc: "Interactive: configure BIG-IP connection -- run before bigip:cis:install"
+    cmds:
+      - bash scripts/bigip-configure.sh
+
+  bigip:tunnel:setup:
+    desc: "Print BIG-IP TMSH commands for Cilium VTEP tunnel setup"
+    cmds:
+      - bash scripts/bigip-cilium-tunnel.sh
+
+  bigip:cis:install:
+    desc: "Install BIG-IP CIS via Helm. Override with: CIS_MODE=cluster task bigip:cis:install"
+    cmds:
+      - bash scripts/install-cis.sh
+
+  bigip:cis:status:
+    desc: "Show CIS pod status and recent logs"
+    cmds:
+      - kubectl get pods -n kube-system -l app=k8s-bigip-ctlr
+      - kubectl logs -n kube-system -l app=k8s-bigip-ctlr --tail=30
+
+  # ---------------------------------------------------------------------------
+  # CA & TLS
+  # ---------------------------------------------------------------------------
+  ca:init:
+    desc: "One-time: create local CA cert and key in repo root (skips if already exists)"
+    cmds:
+      - |
+        if [ -f "root_ca.crt" ] && [ -f "root_ca.key" ]; then
+          echo "Local CA already exists -- skipping"
+          exit 0
+        fi
+        echo "Creating local CA with openssl..."
+        openssl genrsa -out root_ca.key 4096
+        openssl req -new -x509 -days 3650 \
+          -key root_ca.key \
+          -out root_ca.crt \
+          -subj "/CN=nginx-sec-lab Root CA/O=nginx-sec-lab/C=US"
+        echo "Local CA created:"
+        echo "  $(pwd)/root_ca.crt"
+        echo "  $(pwd)/root_ca.key"
+        openssl x509 -noout -subject -dates -in root_ca.crt
+
+  ca:import:
+    desc: "Import local CA into cluster as a Kubernetes secret"
+    cmds:
+      - kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+      - |
+        kubectl create secret tls local-ca \
+          --cert root_ca.crt \
+          --key root_ca.key \
+          --namespace cert-manager \
+          --dry-run=client -o yaml | kubectl apply -f -
+      - echo "CA imported"
+
+  # ---------------------------------------------------------------------------
+  # INFRASTRUCTURE
+  # ---------------------------------------------------------------------------
+
+
+  pre-deploy:
+    desc: "Create namespaces, secrets and ConfigMaps needed before helmfile runs"
+    cmds:
+      - bash scripts/pre-deploy.sh
+
+  deploy:
+    desc: "Deploy all Helm releases via helmfile"
+    cmds:
+      - helmfile sync
+      - kubectl rollout status deployment/cert-manager -n cert-manager --timeout=180s
+      - |
+        DEPLOY=$(kubectl get deployment -n nginx-ingress -o name 2>/dev/null | head -1)
+        [ -n "$DEPLOY" ] && kubectl rollout status "$DEPLOY" -n nginx-ingress --timeout=180s || echo "WARN: no nginx-ingress deployment found" 
+      - echo "Infrastructure deployed"
+
+  issuer:
+    desc: "Apply ClusterIssuer, App Protect policies, and Grafana dashboard"
+    cmds:
+      - kubectl apply -f manifests/namespaces.yaml
+      - kubectl apply -f manifests/cluster-issuer.yaml
+      - |
+        kubectl apply -f policies/ap-logconf.yaml || echo "SKIP: APLogConf not available"
+      - |
+        kubectl apply -f policies/ap-policy-owasp.yaml || echo "SKIP: APPolicy not available"
+      - |
+        kubectl apply -f policies/ap-policy-dataguard.yaml || echo "SKIP: APPolicy not available"
+      - echo "Issuer and WAF policies applied"
+
+  grafana:dashboard:
+    desc: "Apply Grafana dashboard ConfigMaps (sidecar hot-loads within ~30s, no restart)"
+    cmds:
+      - kubectl apply -f grafana/nginx-dashboard.yaml
+      - echo "Dashboards applied. Grafana sidecar will auto-import within ~30s."
+      - echo "Open Grafana with:  task metrics"
+
+  # ---------------------------------------------------------------------------
+  # DEMO APPLICATIONS
+  # ---------------------------------------------------------------------------
+
+  apps:up:
+    desc: "Deploy all demo applications (WAF disabled by default)"
+    cmds:
+      - task: waf-off
+
+  apps:down:
+    desc: "Remove demo app namespaces listed in LAB_APPS"
+    cmds:
+      - |
+        # Read LAB_APPS from lab.env (default: all four)
+        APPS=$(grep -E '^LAB_APPS=' lab.env 2>/dev/null \
+          | sed -E 's/^LAB_APPS=//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+          || echo "crapi juiceshop dvga vampi")
+        APPS="${APPS:-crapi juiceshop dvga vampi}"
+        # Map app key -> namespace (juiceshop -> juice-shop)
+        NS=""
+        for a in ${APPS//,/ }; do
+          case "$a" in
+            juiceshop) NS="$NS juice-shop" ;;
+            crapi|dvga|vampi) NS="$NS $a" ;;
+            *) echo "WARN: unknown app '$a' -- skipping" ;;
+          esac
+        done
+        if [ -n "$NS" ]; then
+          kubectl delete namespace $NS --ignore-not-found=true
+        fi
+      - echo "Demo apps removed"
+
+  # ---------------------------------------------------------------------------
+  # WAF
+  # ---------------------------------------------------------------------------
+
+  waf-on:
+    desc: "Enable NGINX App Protect WAF on apps in LAB_APPS"
+    cmds:
+      - bash scripts/apps-waf.sh on
+      - echo "WAF enabled"
+
+  waf-off:
+    desc: "Disable WAF on apps in LAB_APPS (baseline mode)"
+    cmds:
+      - bash scripts/apps-waf.sh off
+      - echo "WAF disabled"
+
+  # ---------------------------------------------------------------------------
+  # SCANNING
+  # ---------------------------------------------------------------------------
+
+  scan:
+    desc: "Run GoTestWAF against crAPI"
+    cmds:
+      - bash scripts/run-scan.sh gotestwaf
+
+  scan:nuclei:
+    desc: "Run Nuclei template scan across all apps"
+    cmds:
+      - bash scripts/run-scan.sh nuclei
+
+  locust:
+    desc: "Seed crAPI users then run Locust traffic generation"
+    cmds:
+      - bash scripts/run-locust.sh
+
+  locust:logs:
+    desc: "Follow Locust traffic generation logs"
+    cmds:
+      - kubectl logs -f job/locust-traffic
+
+  # ---------------------------------------------------------------------------
+  # OBSERVABILITY
+  # ---------------------------------------------------------------------------
+
+  metrics:
+    desc: "Port-forward Grafana to localhost:3000 (admin/admin)"
+    cmds:
+      - echo "Grafana at http://localhost:3000 -- Ctrl+C to stop"
+      - kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring
+
+  prometheus:
+    desc: "Port-forward Prometheus to localhost:9090"
+    cmds:
+      - echo "Prometheus at http://localhost:9090 -- Ctrl+C to stop"
+      - kubectl port-forward svc/kube-prometheus-stack-prometheus 9090:9090 -n monitoring
+
+  logs:waf:
+    desc: "Tail NGINX App Protect security event log"
+    cmds:
+      - kubectl logs -n nginx-ingress -l app=nginx-ingress -c app-protect-log --follow --tail=50
+
+  logs:nginx:
+    desc: "Tail NGINX Ingress Controller access log"
+    cmds:
+      - kubectl logs -n nginx-ingress -l app=nginx-ingress --follow --tail=100
+
+  # ---------------------------------------------------------------------------
+  # APP UTILITIES
+  # ---------------------------------------------------------------------------
+
+  crapi:seed:
+    desc: "Register test users in crAPI (run before task locust)"
+    cmds:
+      - kubectl delete job crapi-seed -n crapi --ignore-not-found=true
+      - kubectl apply -f jobs/crapi-seed-job.yaml
+      - kubectl wait --for=condition=complete job/crapi-seed -n crapi --timeout=120s
+      - kubectl logs job/crapi-seed -n crapi
+      - echo "crAPI users seeded"
+
+  crapi:mail:
+    desc: "Port-forward MailHog to localhost:8025"
+    cmds:
+      - echo "MailHog at http://localhost:8025 -- Ctrl+C to stop"
+      - kubectl port-forward svc/mailhog 8025:8025 -n crapi
+
+  crapi:shell:
+    desc: "Shell into crapi-identity container"
+    cmds:
+      - kubectl exec -it -n crapi deploy/crapi-identity -- /bin/sh
+
+  juiceshop:shell:
+    desc: "Shell into juice-shop container"
+    cmds:
+      - kubectl exec -it -n juice-shop deploy/juice-shop -- /bin/sh
+
+  # ---------------------------------------------------------------------------
+  # HEALTH
+  # ---------------------------------------------------------------------------
+
+
+  images:import:
+    desc: "Import all lab images from local Docker cache into cluster nodes (no internet needed)"
+    cmds:
+      - bash scripts/import-images.sh
+
+  # ---------------------------------------------------------------------------
+  # LOCAL REGISTRY
+  # ---------------------------------------------------------------------------
+
+  registry:setup:
+    desc: "Create local k3d registry (run once -- survives task down/up)"
+    cmds:
+      - sudo bash scripts/setup-registry.sh
+
+  registry:cache:
+    desc: "Pull all lab images and store in local registry (requires internet once)"
+    cmds:
+      - bash scripts/pull-and-cache.sh
+
+  registry:ls:
+    desc: "List images stored in the local registry"
+    cmds:
+      - |
+        curl -s http://k3d-registry.localhost:5000/v2/_catalog 2>/dev/null \
+          | python3 -m json.tool \
+          || echo "Registry not running -- run: task registry:setup"
+
+
+  test:
+    desc: "Run curl smoke tests against all lab endpoints"
+    cmds:
+      - bash scripts/test-endpoints.sh
+
+  health:
+    desc: "Run all post-deploy verification checks"
+    cmds:
+      - bash scripts/health-check.sh
