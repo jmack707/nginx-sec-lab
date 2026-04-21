@@ -1,4 +1,13 @@
 ---
+# Shared PVC for scan results (GoTestWAF, Nuclei) and Locust reports.
+#
+# storageClassName intentionally omitted so the cluster's default
+# StorageClass provisions the volume:
+#   - k3d / k3s → local-path (already default)
+#   - GKE → standard-rwo
+#   - EKS → gp2 / gp3
+# This keeps the lab portable across clusters without hard-coding a
+# class name that may not exist (k3d has no "standard" class).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -10,4 +19,3 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  storageClassName: standard

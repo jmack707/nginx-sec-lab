@@ -12,19 +12,12 @@ controller:
   enablePreviewPolicies: true
 
   # Expose the NGINX metrics endpoint on :9113 on the controller pod.
-  # The ServiceMonitor below (serviceMonitor.create: true) exposes this
-  # target to Prometheus via Kubernetes service discovery -- no static
-  # scrape config is needed in values/prometheus.yaml.
+  # Scraping is driven by manifests/nginx-podmonitor.yaml (a static
+  # PodMonitor), NOT by the chart's built-in serviceMonitor option --
+  # that option doesn't render reliably in chart 1.1.3.
   prometheus:
     create: true
     port: 9113
-
-  # Native Prometheus Operator integration. The chart creates a ServiceMonitor
-  # in the nginx-ingress namespace pointing at the /metrics endpoint above.
-  # It's discovered cluster-wide because values/prometheus.yaml sets
-  # serviceMonitorSelectorNilUsesHelmValues: false (match all ServiceMonitors).
-  serviceMonitor:
-    create: true
 
   # LoadBalancer -- k3d routes external ports to this service
   service:

@@ -1,0 +1,43 @@
+---
+# Static PodMonitor for F5 NGINX Ingress Controller metrics.
+#
+# Why a PodMonitor instead of a ServiceMonitor via chart values?
+# The F5 NIC chart 1.1.3 (shipped with NIC 3.4.3) does not reliably render
+# a ServiceMonitor from `controller.prometheus.serviceMonitor.create: true`
+# — the template either doesn't exist in that chart version or also requires
+# `controller.prometheus.service.create: true` plus a matching dedicated
+# Prometheus service. A static PodMonitor bypasses all that and targets
+# the controller pods directly by their confirmed labels and port name.
+#
+# Prometheus discovers this automatically because
+# values/prometheus.yaml sets:
+#   prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues: false
+# which tells the Prometheus Operator to watch ALL PodMonitors cluster-wide.
+#
+# Pod labels and port name were verified against the live pod:
+#   kubectl get pod -n nginx-ingress -l app.kubernetes.io/name=nginx-ingress \
+#     -o jsonpath='{.items[0].metadata.labels}'
+#   kubectl get pod -n nginx-ingress -l app.kubernetes.io/name=nginx-ingress \
+#     -o jsonpath='{.items[0].spec.containers[0].ports}'
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: nginx-ingress
+  namespace: nginx-ingress
+  labels:
+    app.kubernetes.io/name: nginx-ingress
+    app.kubernetes.io/component: metrics
+    lab: nginx-sec-lab
+spec:
+  namespaceSelector:
+    matchNames:
+      - nginx-ingress
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nginx-ingress
+      app.kubernetes.io/instance: nginx-ingress
+  podMetricsEndpoints:
+    - port: prometheus
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

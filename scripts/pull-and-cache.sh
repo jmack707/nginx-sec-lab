@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
 # scripts/pull-and-cache.sh
 # Pulls all lab images and stores them in the local registry.
-# Registry credentials are configured in lab.env / lab.secrets.
+# Registry credentials are configured in lab.env.
 #
 # DOCKERHUB_USER  -- set in lab.env to avoid Docker Hub rate limits
-# NGINX_JWT       -- set in lab.secrets only if using NGINX Plus / App Protect
-# NGINX_MODE      -- "oss" (default) or "plus"
-#
-# NOTE: OSS and Plus NGINX Ingress images are cached at DISTINCT destination
-# paths so they cannot collide in the local registry:
-#   OSS  → k3d-registry.localhost:5000/nginx/nginx-ingress:3.4.3
-#   Plus → k3d-registry.localhost:5000/nginx-ic/nginx-plus-ingress:3.4.3
-# The NGINX image is also always re-pushed (the "already cached" shortcut is
-# bypassed for it), which self-heals any legacy poisoned tag from earlier
-# versions of this script that re-tagged Plus content into the OSS slot.
+# NGINX_JWT       -- set in lab.env only if using NGINX Plus / App Protect
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -104,9 +95,9 @@ login_registries() {
   # NGINX private registry (Plus/App Protect only)
   if [ "${NGINX_MODE:-oss}" = "plus" ]; then
     if [ -z "${NGINX_JWT:-}" ]; then
-      echo -e "${RED}ERROR: NGINX_MODE=plus but NGINX_JWT not set in lab.secrets${NC}"
+      echo -e "${RED}ERROR: NGINX_MODE=plus but NGINX_JWT not set in lab.env${NC}"
       echo "  Get token: https://my.f5.com > My Products > NGINX > Manage Subscriptions"
-      echo "  Set NGINX_JWT=<token> in lab.secrets"
+      echo "  Set NGINX_JWT=<token> in lab.env"
       exit 1
     fi
     if ! cat ~/.docker/config.json 2>/dev/null | grep -q "private-registry.nginx.com"; then
@@ -151,8 +142,7 @@ cache() {
   fi
 }
 
-# ── Determine NGINX image source and destination ──────────────────────────────
-# Plus and OSS use distinct destination paths so they cannot collide.
+# ── Determine NGINX image source ──────────────────────────────────────────────
 if [ "${NGINX_MODE:-oss}" = "plus" ]; then
   NGINX_IMAGE="private-registry.nginx.com/nginx-ic/nginx-plus-ingress:3.4.3"
   NGINX_DST="nginx-ic/nginx-plus-ingress:3.4.3"
@@ -180,8 +170,7 @@ echo "INFRASTRUCTURE"
 cache "quay.io/jetstack/cert-manager-controller:v1.14.7"  "quay.io/jetstack/cert-manager-controller:v1.14.7"
 cache "quay.io/jetstack/cert-manager-cainjector:v1.14.7"  "quay.io/jetstack/cert-manager-cainjector:v1.14.7"
 cache "quay.io/jetstack/cert-manager-webhook:v1.14.7"     "quay.io/jetstack/cert-manager-webhook:v1.14.7"
-# Always re-push the NGINX image so mode switches cannot leave a stale/poisoned
-# manifest at the destination tag. Docker layer dedup keeps this cheap.
+# Always re-push NIC image so a mode switch can't leave a poisoned manifest.
 cache "${NGINX_IMAGE}"                                     "${NGINX_DST}"    1
 cache "grafana/grafana:10.4.0"                            "grafana/grafana:10.4.0"
 cache "quay.io/kiwigrid/k8s-sidecar:1.26.1"               "quay.io/kiwigrid/k8s-sidecar:1.26.1"
@@ -199,6 +188,7 @@ cache "bkimminich/juice-shop:latest"  "bkimminich/juice-shop:latest"
 cache "dolevf/dvga:latest"            "dolevf/dvga:latest"
 cache "erev0s/vampi:latest"           "erev0s/vampi:latest"
 cache "curlimages/curl:latest"        "curlimages/curl:latest"
+cache "locustio/locust:latest"        "locustio/locust:latest"
 cache "busybox:1.35"                  "library/busybox:1.35"
 cache "mongo:4.4"                     "library/mongo:4.4"
 cache "postgres:14-alpine"            "library/postgres:14-alpine"

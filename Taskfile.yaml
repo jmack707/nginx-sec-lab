@@ -161,17 +161,18 @@ tasks:
       - echo "Infrastructure deployed"
 
   issuer:
-    desc: "Apply ClusterIssuer, App Protect policies, and Grafana dashboard"
+    desc: "Apply ClusterIssuer, App Protect policies, and NIC PodMonitor"
     cmds:
       - kubectl apply -f manifests/namespaces.yaml
       - kubectl apply -f manifests/cluster-issuer.yaml
+      - kubectl apply -f manifests/nginx-podmonitor.yaml
       - |
         kubectl apply -f policies/ap-logconf.yaml || echo "SKIP: APLogConf not available"
       - |
         kubectl apply -f policies/ap-policy-owasp.yaml || echo "SKIP: APPolicy not available"
       - |
         kubectl apply -f policies/ap-policy-dataguard.yaml || echo "SKIP: APPolicy not available"
-      - echo "Issuer and WAF policies applied"
+      - echo "Issuer, PodMonitor, and WAF policies applied"
 
   grafana:dashboard:
     desc: "Apply Grafana dashboard ConfigMaps (sidecar hot-loads within ~30s, no restart)"
