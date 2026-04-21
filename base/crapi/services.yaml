@@ -50,9 +50,13 @@ metadata:
 spec:
   selector:
     app: crapi-workshop
+  # gunicorn inside the container listens on 8000 (see pod log:
+  # "Listening at: http://0.0.0.0:8000"). The previous port 8888 was
+  # a stale value from an older crAPI release and caused 502s because
+  # the Service's targetPort had no listener on the pod.
   ports:
-    - port: 8888
-      targetPort: 8888
+    - port: 8000
+      targetPort: 8000
 ---
 apiVersion: v1
 kind: Service
