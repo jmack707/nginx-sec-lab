@@ -186,9 +186,32 @@ tasks:
   # ---------------------------------------------------------------------------
 
   apps:up:
-    desc: "Deploy all demo applications (WAF disabled by default)"
+    desc: "Deploy all demo applications (WAF disabled by default) and wait for pods to be ready"
     cmds:
       - task: waf-off
+      # Wait for each selected app's pods to be Ready before returning.
+      # Without this, 'task up' races the subsequent 'task health' call and
+      # reports a false failure because apps are still ContainerCreating.
+      # Timeouts reflect measured cold-start times: crAPI (Spring Boot +
+      # postgres init) ~60s, other apps ~15s; budgets are padded 3x.
+      - |
+        # Read LAB_APPS from lab.env (same parsing as apps:down)
+        APPS=$(grep -E '^LAB_APPS=' lab.env 2>/dev/null \
+          | sed -E 's/^LAB_APPS=//; s/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/' \
+          || echo "crapi juiceshop dvga vampi")
+        APPS="${APPS:-crapi juiceshop dvga vampi}"
+        for a in ${APPS//,/ }; do
+          case "$a" in
+            crapi)     NS=crapi;      TIMEOUT=180s ;;
+            juiceshop) NS=juice-shop; TIMEOUT=120s ;;
+            dvga)      NS=dvga;       TIMEOUT=120s ;;
+            vampi)     NS=vampi;      TIMEOUT=120s ;;
+            *) echo "WARN: unknown app '$a' -- skipping"; continue ;;
+          esac
+          echo "Waiting for $NS pods to be Ready (timeout: $TIMEOUT)..."
+          kubectl wait --for=condition=ready pod --all -n "$NS" --timeout="$TIMEOUT"
+        done
+      - echo "All selected apps are Ready"
 
   apps:down:
     desc: "Remove demo app namespaces listed in LAB_APPS"
