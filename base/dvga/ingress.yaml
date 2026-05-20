@@ -13,10 +13,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - dvga.test.local
+        - dvga.lab.local
       secretName: dvga-tls
   rules:
-    - host: dvga.test.local
+    - host: dvga.lab.local
       http:
         paths:
           - path: /

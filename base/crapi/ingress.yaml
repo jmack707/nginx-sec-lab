@@ -12,10 +12,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - crapi.1broken.net
+        - crapi.lab.local
       secretName: crapi-tls
   rules:
-    - host: crapi.1broken.net
+    - host: crapi.lab.local
       http:
         paths:
           - path: /identity

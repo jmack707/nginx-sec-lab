@@ -13,7 +13,7 @@ case "$SCANNER" in
   gotestwaf)
     JOB_FILE="jobs/gotestwaf-job.yaml"
     JOB_NAME="gotestwaf-scan"
-    TIMEOUT="300s"
+    TIMEOUT="900s"
     ;;
   nuclei)
     JOB_FILE="jobs/nuclei-job.yaml"

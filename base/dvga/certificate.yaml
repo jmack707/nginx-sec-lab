@@ -10,4 +10,4 @@ spec:
     name: local-ca-issuer
     kind: ClusterIssuer
   dnsNames:
-    - dvga.test.local
+    - dvga.lab.local

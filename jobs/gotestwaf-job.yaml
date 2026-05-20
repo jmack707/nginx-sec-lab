@@ -71,13 +71,35 @@ spec:
           image: wallarm/gotestwaf:latest
           args:
             - "--url=https://crapi.lab.local"
-            - "--tlsVerify=false"
+            # TLS verification disabled: GoTestWAF container has no
+            # copy of the lab's self-signed CA. Omitting the flag
+            # defaults to "not present" = no verification, so we just
+            # don't pass it.
             - "--noEmailReport"
-            - "--reportFormat=txt"
+            # reportFormat accepts: none, json, html, pdf
+            # html renders well in a browser and includes full detail.
+            - "--reportFormat=html"
             - "--reportPath=/results"
             - "--workers=5"
-            - "--sendDelay=100ms"
+            # sendDelay is milliseconds as an INTEGER, not a Go duration string
+            # ("--sendDelay=100ms" fails with strconv.ParseInt error).
+            - "--sendDelay=100"
             - "--logLevel=info"
+            # Non-blocked requests are passed (default); since the WAF
+            # is off, this is the expected "attacks succeeded" baseline.
+            - "--nonBlockedAsPassed"
+            # Skip GoTestWAF's WAF pre-check entirely. By default the tool
+            # fires one attack request and aborts with
+            #   "WAF was not detected. Please use --blockStatusCodes..."
+            # if the response isn't blocked. That's backwards for a
+            # WAF-off baseline run -- we *want* to scan with no WAF and
+            # record "everything bypassed". --skipWAFBlockCheck removes
+            # the pre-check gate so the scan proceeds.
+            - "--skipWAFBlockCheck"
+            # Declare the "blocked" status code for scoring. Since the WAF
+            # is off, nothing will return 999 and every attack will score
+            # as bypassed -- exactly the expected baseline shape.
+            - "--blockStatusCodes=999"
           volumeMounts:
             - name: results
               mountPath: /results
