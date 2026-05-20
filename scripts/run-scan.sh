@@ -18,7 +18,7 @@ case "$SCANNER" in
   nuclei)
     JOB_FILE="jobs/nuclei-job.yaml"
     JOB_NAME="nuclei-scan"
-    TIMEOUT="600s"
+    TIMEOUT="1200s"
     ;;
   *)
     echo "ERROR: Unknown scanner '$SCANNER'. Use: gotestwaf | nuclei"

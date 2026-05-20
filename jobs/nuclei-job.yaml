@@ -6,6 +6,19 @@
 #   task scan:nuclei            (resolves INGRESS_IP_PLACEHOLDER at runtime)
 #
 # Docs: https://github.com/projectdiscovery/nuclei
+#
+# Design notes:
+# - Templates auto-install on first nuclei run into $HOME/nuclei-templates.
+#   Subsequent runs see the templates already there and proceed straight
+#   to scanning.
+# - Earlier versions of this manifest used a separate initContainer with
+#   `-update-template-dir` and a `-template-dir` arg on the main container,
+#   but those flags don't exist in nuclei v3.x.
+# - Tried `-ut` (alias for -update-templates) in a previous iteration,
+#   but in v3 that's a standalone subcommand: it updates templates and
+#   exits without running the scan. Don't use it.
+# - HOME=/tmp gives nuclei a writable location for its config + the
+#   default ~/nuclei-templates/ directory.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -24,7 +37,6 @@ spec:
     spec:
       restartPolicy: Never
       serviceAccountName: scanner-sa
-
       # INGRESS_IP_PLACEHOLDER resolved at task scan:nuclei time
       hostAliases:
         - ip: "INGRESS_IP_PLACEHOLDER"
@@ -33,24 +45,12 @@ spec:
             - juiceshop.lab.local
             - dvga.lab.local
             - vampi.lab.local
-
-      initContainers:
-        - name: update-templates
-          image: projectdiscovery/nuclei:latest
-          command:
-            - nuclei
-            - -update-templates
-            - -update-template-dir
-            - /templates
-          volumeMounts:
-            - name: nuclei-templates
-              mountPath: /templates
-
       containers:
         - name: nuclei
           image: projectdiscovery/nuclei:latest
           command: ["nuclei"]
           args:
+            # Targets
             - "-target"
             - "https://crapi.lab.local"
             - "-target"
@@ -59,11 +59,17 @@ spec:
             - "https://dvga.lab.local"
             - "-target"
             - "https://vampi.lab.local"
+            # Tag-based template selection: security-focused subset.
+            # Without tag filtering, ~9000 templates run; this trims to ~800.
             - "-tags"
             - "oast,exposure,misconfig,default-login,token,graphql,api"
             - "-exclude-tags"
             - "network,dns,ssl"
+            # TLS: lab uses a self-signed CA. tls-impersonate is the
+            # right flag name (current nuclei) and allows talking to
+            # self-signed endpoints without verification errors.
             - "-tls-impersonate"
+            # Throughput
             - "-retries"
             - "1"
             - "-timeout"
@@ -72,31 +78,32 @@ spec:
             - "50"
             - "-c"
             - "10"
+            # Output: text for human reading, JSON-line for diffing.
             - "-o"
             - "/results/nuclei-output.txt"
             - "-je"
             - "/results/nuclei-output.json"
-            - "-template-dir"
-            - "/templates"
           env:
+            # Nuclei needs a writable HOME for its config and the default
+            # ~/nuclei-templates directory.
             - name: HOME
               value: /tmp
           volumeMounts:
             - name: results
               mountPath: /results
-            - name: nuclei-templates
-              mountPath: /templates
           resources:
             requests:
-              memory: "256Mi"
+              memory: "512Mi"
               cpu: "200m"
             limits:
-              memory: "512Mi"
+              # nuclei v3.8 loads thousands of YAML template definitions
+              # into memory before scanning. With 512Mi limits the pod
+              # OOMKilled at the "Loading templates" phase, before any
+              # scan output was written. 2Gi gives comfortable headroom
+              # for the tag-filtered template set (~800 templates).
+              memory: "2Gi"
               cpu: "1000m"
-
       volumes:
         - name: results
           persistentVolumeClaim:
             claimName: scan-results-pvc
-        - name: nuclei-templates
-          emptyDir: {}
