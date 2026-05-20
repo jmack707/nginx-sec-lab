@@ -1,0 +1,60 @@
+[swagger-api] [http] [info] https://juiceshop.lab.local/api-docs/swagger.json [paths="/api-docs/swagger.json"]
+[codeigniter-env] [http] [high] https://crapi.lab.local/.env [paths="/.env"]
+[laravel-env] [http] [high] https://crapi.lab.local/.env [paths="/.env"]
+[cookies-without-secure] [javascript] [info] dvga.lab.local ["env"]
+[cookies-without-httponly] [javascript] [info] dvga.lab.local ["env"]
+[graphql-alias-batching] [http] [info] https://dvga.lab.local/graphql
+[graphql-array-batching] [http] [info] https://dvga.lab.local/graphql
+[graphql-field-suggestion] [http] [info] https://dvga.lab.local/graphql
+[graphql-detect] [http] [info] https://dvga.lab.local/graphiql [paths="/graphiql"]
+[generic-env] [http] [high] https://crapi.lab.local/.env [paths="/.env"]
+[prometheus-metrics] [http] [medium] https://juiceshop.lab.local/metrics
+[missing-cookie-samesite-strict] [http] [info] https://dvga.lab.local ["env=graphiql:disable; Path=/"]
+[http-missing-security-headers:referrer-policy] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:cross-origin-embedder-policy] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:cross-origin-resource-policy] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:content-security-policy] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:x-frame-options] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:x-permitted-cross-domain-policies] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:clear-site-data] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:cross-origin-opener-policy] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:missing-content-type] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:strict-transport-security] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:permissions-policy] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:x-content-type-options] [http] [info] https://crapi.lab.local
+[http-missing-security-headers:strict-transport-security] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:content-security-policy] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:permissions-policy] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:x-content-type-options] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:x-permitted-cross-domain-policies] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:clear-site-data] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:cross-origin-embedder-policy] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:cross-origin-resource-policy] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:x-frame-options] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:referrer-policy] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:cross-origin-opener-policy] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:missing-content-type] [http] [info] https://vampi.lab.local
+[http-missing-security-headers:referrer-policy] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:cross-origin-embedder-policy] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:cross-origin-opener-policy] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:cross-origin-resource-policy] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:strict-transport-security] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:content-security-policy] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:x-frame-options] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:clear-site-data] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:missing-content-type] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:permissions-policy] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:x-content-type-options] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:x-permitted-cross-domain-policies] [http] [info] https://dvga.lab.local
+[http-missing-security-headers:missing-content-type] [http] [info] https://juiceshop.lab.local
+[http-missing-security-headers:strict-transport-security] [http] [info] https://juiceshop.lab.local
+[http-missing-security-headers:content-security-policy] [http] [info] https://juiceshop.lab.local
+[http-missing-security-headers:clear-site-data] [http] [info] https://juiceshop.lab.local
+[http-missing-security-headers:cross-origin-embedder-policy] [http] [info] https://juiceshop.lab.local
+[http-missing-security-headers:cross-origin-resource-policy] [http] [info] https://juiceshop.lab.local
+[http-missing-security-headers:permissions-policy] [http] [info] https://juiceshop.lab.local
+[http-missing-security-headers:x-permitted-cross-domain-policies] [http] [info] https://juiceshop.lab.local
+[http-missing-security-headers:referrer-policy] [http] [info] https://juiceshop.lab.local
+[http-missing-security-headers:cross-origin-opener-policy] [http] [info] https://juiceshop.lab.local
+[graphql-get-method] [http] [info] https://dvga.lab.local/graphql?query={__typename}
+[openapi] [http] [info] https://vampi.lab.local/openapi.json
