@@ -95,6 +95,7 @@ BASE_ARGS=(
   --agents 2
   --port "${LAB_HOST_IP}:80:80@loadbalancer"
   --port "${LAB_HOST_IP}:443:443@loadbalancer"
+  --port "${LAB_HOST_IP}:30080-30600:30080-30600@loadbalancer"
   --k3s-arg "--disable=traefik@server:0"
 )
 

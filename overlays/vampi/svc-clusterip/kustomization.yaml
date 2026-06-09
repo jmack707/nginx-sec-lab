@@ -1,0 +1,19 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# SVC-CLUSTERIP — vampi Service returned to ClusterIP (default)
+# Access via NIC ingress only: https://vampi.<LAB_DOMAIN>
+# Switch to NodePort: task svc:nodeport
+namespace: vampi
+resources:
+  - ../../../base/vampi
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/type
+        value: ClusterIP
+      - op: remove
+        path: /spec/ports/0/nodePort
+    target:
+      kind: Service
+      name: vampi

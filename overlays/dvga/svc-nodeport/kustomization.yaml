@@ -1,0 +1,21 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# SVC-NODEPORT — dvga Service exposed on NodePort 30501
+# Allows direct host:30501 access bypassing NIC.
+# App listens on 5013 internally.
+# Switch back: task svc:clusterip
+namespace: dvga
+resources:
+  - ../../../base/dvga
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30501
+    target:
+      kind: Service
+      name: dvga

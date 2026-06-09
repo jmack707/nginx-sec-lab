@@ -1,0 +1,21 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# SVC-NODEPORT — vampi Service exposed on NodePort 30082
+# Allows direct host:30082 access bypassing NIC.
+# App listens on 5000 internally; Service maps 80->5000.
+# Switch back: task svc:clusterip
+namespace: vampi
+resources:
+  - ../../../base/vampi
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30082
+    target:
+      kind: Service
+      name: vampi

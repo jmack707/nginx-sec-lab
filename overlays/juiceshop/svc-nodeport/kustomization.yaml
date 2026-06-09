@@ -1,0 +1,21 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# SVC-NODEPORT — juice-shop Service exposed on NodePort 30300
+# Allows direct host:30300 access bypassing NIC.
+# Note: app listens on port 3000 internally; NodePort maps to that.
+# Switch back: task svc:clusterip
+namespace: juice-shop
+resources:
+  - ../../../base/juiceshop
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30300
+    target:
+      kind: Service
+      name: juice-shop
