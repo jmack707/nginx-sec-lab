@@ -19,10 +19,36 @@ controller:
     create: true
     port: 9113
 
-  # LoadBalancer -- k3d routes external ports to this service
+  # ── Service exposure ──────────────────────────────────────────────────────
+  # Klipper (k3s servicelb) is disabled in create-cluster.sh, so type
+  # LoadBalancer would hang at <pending>. BIG-IP CIS is the load balancer.
+  #
+  # service.type is overridden at deploy time by helmfile from NIC_SVC_MODE
+  # in lab.env:
+  #   NIC_SVC_MODE=nodeport   -> type: NodePort   (pair with CIS_MODE=nodeport)
+  #   NIC_SVC_MODE=clusterip  -> type: ClusterIP  (pair with CIS_MODE=cluster,
+  #                                                requires Cilium + VTEP)
+  # The default below (NodePort) is used if helmfile sets nothing.
+  #
+  # externalTrafficPolicy: Cluster is REQUIRED here. With a single NIC
+  # replica and CIS NodePort pool members on every node, "Local" would
+  # blackhole traffic on the two nodes without the NIC pod -- the classic
+  # "works sometimes" symptom. "Cluster" lets any node forward to the pod.
+  # (Source IP is already the BIG-IP self-IP via SNAT, so "Local" buys
+  # nothing here anyway.)
+  #
+  # The httpPort/httpsPort nodePort values are pinned so BIG-IP pool member
+  # definitions and the host-port proxy in create-cluster.sh stay stable.
+  # They are ignored by Kubernetes when type is ClusterIP.
   service:
-    type: LoadBalancer
-    externalTrafficPolicy: Local
+    type: NodePort
+    externalTrafficPolicy: Cluster
+    httpPort:
+      port: 80
+      nodePort: 30000
+    httpsPort:
+      port: 443
+      nodePort: 30443
 
   # Default TLS secret (created by pre-deploy.sh)
   defaultTLS:
