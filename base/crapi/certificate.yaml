@@ -10,4 +10,4 @@ spec:
     name: local-ca-issuer
     kind: ClusterIssuer
   dnsNames:
-    - crapi.lab.local
+    - crapi.laptop.test

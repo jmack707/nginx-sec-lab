@@ -10,4 +10,4 @@ spec:
     name: local-ca-issuer
     kind: ClusterIssuer
   dnsNames:
-    - vampi.lab.local
+    - vampi.laptop.test

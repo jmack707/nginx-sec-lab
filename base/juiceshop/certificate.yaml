@@ -10,4 +10,4 @@ spec:
     name: local-ca-issuer
     kind: ClusterIssuer
   dnsNames:
-    - juiceshop.lab.local
+    - juiceshop.laptop.test

@@ -12,10 +12,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - vampi.lab.local
+        - vampi.laptop.test
       secretName: vampi-tls
   rules:
-    - host: vampi.lab.local
+    - host: vampi.laptop.test
       http:
         paths:
           - path: /

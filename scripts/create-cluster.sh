@@ -95,7 +95,10 @@ BASE_ARGS=(
   --agents 2
   --port "${LAB_HOST_IP}:80:80@loadbalancer"
   --port "${LAB_HOST_IP}:443:443@loadbalancer"
-  --port "${LAB_HOST_IP}:30080-30600:30080-30600@loadbalancer"
+  --port "${LAB_HOST_IP}:${LAB_NODEPORT_CRAPI:-30080}:${LAB_NODEPORT_CRAPI:-30080}@loadbalancer"
+  --port "${LAB_HOST_IP}:${LAB_NODEPORT_JUICESHOP:-30300}:${LAB_NODEPORT_JUICESHOP:-30300}@loadbalancer"
+  --port "${LAB_HOST_IP}:${LAB_NODEPORT_DVGA:-30501}:${LAB_NODEPORT_DVGA:-30501}@loadbalancer"
+  --port "${LAB_HOST_IP}:${LAB_NODEPORT_VAMPI:-30082}:${LAB_NODEPORT_VAMPI:-30082}@loadbalancer"
   --k3s-arg "--disable=traefik@server:0"
 )
 

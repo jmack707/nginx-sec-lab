@@ -235,7 +235,38 @@ tasks:
           kubectl delete namespace $NS --ignore-not-found=true
         fi
       - echo "Demo apps removed"
+  svc:nodeport:
+    desc: "Expose demo apps via NodePort (direct host access, bypasses NIC)"
+    cmds:
+      - bash scripts/svc-mode.sh nodeport
 
+  svc:clusterip:
+    desc: "Return demo app Services to ClusterIP (NIC ingress only)"
+    cmds:
+      - bash scripts/svc-mode.sh clusterip
+
+  svc:status:
+    desc: "Show current Service types and NodePort assignments for all demo apps"
+    cmds:
+      - |
+        source <(grep -E '^LAB_(HOST_IP|NODEPORT_)' lab.env 2>/dev/null | \
+          sed -E 's/^([^=]+)=(.*)/\1="\2"/')
+        LAB_HOST_IP="${LAB_HOST_IP:-<LAB_HOST_IP>}"
+        echo ""
+        printf "  %-14s  %-12s  %-10s  %s\n" "App" "Namespace" "Type" "NodePort / URL"
+        printf "  %-14s  %-12s  %-10s  %s\n" "─────────────" "───────────" "─────────" "──────────────────────────────"
+        for row in "crapi:crapi:crapi-web" "juiceshop:juice-shop:juice-shop" "dvga:dvga:dvga" "vampi:vampi:vampi"; do
+          APP="${row%%:*}"; rest="${row#*:}"; NS="${rest%%:*}"; SVC="${rest#*:}"
+          TYPE=$(kubectl get svc "$SVC" -n "$NS" -o jsonpath='{.spec.type}' 2>/dev/null || echo "?")
+          NP=$(kubectl get svc "$SVC" -n "$NS" -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "-")
+          if [ "$TYPE" = "NodePort" ] && [ "$NP" != "-" ]; then
+            DETAIL="http://${LAB_HOST_IP}:${NP}"
+          else
+            DETAIL="ClusterIP only (NIC ingress)"
+          fi
+          printf "  %-14s  %-12s  %-10s  %s\n" "$APP" "$NS" "$TYPE" "$DETAIL"
+        done
+        echo ""
   # ---------------------------------------------------------------------------
   # WAF
   # ---------------------------------------------------------------------------
